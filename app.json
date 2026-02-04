@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "Alfie's Food Co.",
+    "slug": "alfies-ordering",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/Alfies.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2C3E50"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.alfiesfoodco.ordering"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/Alfies.png",
+        "backgroundColor": "#2C3E50"
+      },
+      "package": "com.alfiesfoodco.ordering"
+    },
+    "web": {
+      "favicon": "./assets/Alfies.png"
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-web-browser",
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}

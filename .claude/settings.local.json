@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(powershell -Command \"\\(Get-Content ''C:\\\\projects\\\\Alfies\\\\src\\\\data\\\\productCatalog.ts''\\).Count\")",
+      "Bash(npx tsc:*)",
+      "Bash(powershell -Command \"Select-String -Path ''C:\\\\projects\\\\Alfies\\\\src\\\\data\\\\productCatalog.ts'' -Pattern ''unit: \"\"[^\"\"]*\"\"'' -AllMatches | ForEach-Object { $_Matches.Value } | Sort-Object -Unique\")",
+      "Bash(powershell -Command \"\\(Get-Content productCatalog.ts\\) -replace ''sku: \"\"[^\"\"]+\"\", '', '''' | Set-Content productCatalog.ts\")",
+      "Bash(npx expo install:*)",
+      "Bash(dir:*)",
+      "Bash(npx supabase:*)",
+      "Bash(supabase functions deploy:*)",
+      "WebSearch",
+      "WebFetch(domain:developer.xero.com)"
+    ]
+  }
+}
