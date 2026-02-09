@@ -54,7 +54,8 @@ type Invitation = {
 type RoleOption = 'owner' | 'user';
 
 export default function UserListScreen() {
-  const { user: currentUser, tenant } = useAuth();
+  const { user: currentUser, tenant, isMaster } = useAuth();
+  const supabaseUrl = 'https://cijgmmckafmfmmlpvgyi.supabase.co';
 
   const [users, setUsers] = useState<User[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -66,6 +67,8 @@ export default function UserListScreen() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<RoleOption>('user');
   const [inviting, setInviting] = useState(false);
+  const [inviteBusinessName, setInviteBusinessName] = useState('');
+  const [inviteOwnerName, setInviteOwnerName] = useState('');
 
   // Add customer modal state
   const [addModalVisible, setAddModalVisible] = useState(false);
@@ -160,12 +163,8 @@ export default function UserListScreen() {
     }
     if (!tenant?.id) return;
 
-    // Check if email already exists locally
-    const existingUser = users.find(u => u.email.toLowerCase() === addEmail.trim().toLowerCase());
-    if (existingUser) {
-      Alert.alert('Already Registered', 'This email is already registered as a customer.');
-      return;
-    }
+    // Note: We don't block existing emails anymore - the Edge Function handles
+    // connecting existing customers to this tenant as a new supplier relationship
 
     setAdding(true);
     try {
@@ -188,6 +187,8 @@ export default function UserListScreen() {
       if (data?.error) throw new Error(data.error);
 
       // Clear form fields
+      const customerName = addBusinessName.trim();
+      const customerEmail = addEmail.trim();
       setAddEmail('');
       setAddCustomerId('');
       setAddBusinessName('');
@@ -199,10 +200,19 @@ export default function UserListScreen() {
       setAddDeliveryInstructions('');
 
       setAddModalVisible(false);
-      Alert.alert(
-        'Customer Added',
-        `${addBusinessName.trim()} has been added. A password reset email has been sent to ${addEmail.trim()} so they can set up their login.`
-      );
+
+      // Show appropriate message based on whether it was an existing customer or new
+      if (data?.existing_customer) {
+        Alert.alert(
+          'Customer Connected',
+          data.message || `${customerEmail} is now connected to your business and can see your products.`
+        );
+      } else {
+        Alert.alert(
+          'Customer Added',
+          `${customerName} has been added. A password reset email has been sent to ${customerEmail} so they can set up their login.`
+        );
+      }
       fetchData();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to add customer');
@@ -234,7 +244,7 @@ export default function UserListScreen() {
       const { data, error } = await supabase.functions.invoke('send-invitation', {
         body: {
           to: email,
-          tenantName: tenant?.name || "Alfie's Food Co.",
+          tenantName: tenant?.name || 'My Business',
           inviterName: currentUser?.full_name,
         },
       });
@@ -257,6 +267,56 @@ export default function UserListScreen() {
       return;
     }
     if (!tenant?.id) return;
+
+    // If master user is inviting an owner, create a new business
+    if (isMaster() && inviteRole === 'owner') {
+      if (!inviteBusinessName.trim()) {
+        Alert.alert('Validation', 'Please enter a business name for the new owner.');
+        return;
+      }
+      if (!inviteOwnerName.trim()) {
+        Alert.alert('Validation', 'Please enter the owner\'s name.');
+        return;
+      }
+
+      setInviting(true);
+      try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/create-business`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            businessName: inviteBusinessName.trim(),
+            ownerEmail: inviteEmail.trim().toLowerCase(),
+            ownerName: inviteOwnerName.trim(),
+            invitedBy: currentUser?.id,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to create business');
+        }
+
+        setInviteModalVisible(false);
+        setInviteEmail('');
+        setInviteBusinessName('');
+        setInviteOwnerName('');
+        setInviteRole('user');
+
+        Alert.alert(
+          'Business Created',
+          result.message || `New business "${inviteBusinessName}" created successfully.`
+        );
+      } catch (error: any) {
+        Alert.alert('Error', error.message || 'Failed to create business');
+      } finally {
+        setInviting(false);
+      }
+      return;
+    }
 
     // Check if email already exists
     const existingUser = users.find(u => u.email.toLowerCase() === inviteEmail.trim().toLowerCase());
@@ -326,8 +386,8 @@ export default function UserListScreen() {
   };
 
   const getInviteMessage = (email: string): string => {
-    const tenantName = tenant?.name || "Alfie's Food Co.";
-    return `You've been invited to order from ${tenantName}!\n\nTo get started:\n1. Download the Alfie's app\n2. Tap "Have an invitation? Register here"\n3. Enter your email: ${email}\n4. Complete your registration\n\nWe look forward to serving you!`;
+    const tenantName = tenant?.name || 'our business';
+    return `You've been invited to order from ${tenantName}!\n\nTo get started:\n1. Download the Easy Ordering app\n2. Tap "Have an invitation? Register here"\n3. Enter your email: ${email}\n4. Complete your registration\n\nWe look forward to serving you!`;
   };
 
   const shareInvitation = async () => {
@@ -715,10 +775,11 @@ export default function UserListScreen() {
     invitations.forEach(inv => listData.push({ type: 'invitation', data: inv }));
   }
 
-  // Add users section if any
-  if (users.length > 0) {
+  // Add users section if any (filter out owners from customer list)
+  const customers = users.filter(u => u.role !== 'owner');
+  if (customers.length > 0) {
     listData.push({ type: 'section-header', title: 'Registered Customers' });
-    users.forEach(u => listData.push({ type: 'user', data: u }));
+    customers.forEach(u => listData.push({ type: 'user', data: u }));
   }
 
   const renderListItem = ({ item }: { item: ListItem }) => {
@@ -738,7 +799,7 @@ export default function UserListScreen() {
 
   return (
     <View style={styles.container}>
-      {users.length === 0 && invitations.length === 0 ? (
+      {customers.length === 0 && invitations.length === 0 ? (
         <FlatList
           data={[]}
           keyExtractor={() => 'empty'}
@@ -805,6 +866,31 @@ export default function UserListScreen() {
               Send an invitation to a new customer. They will receive a link to register and set up their account.
             </Text>
 
+            <Text style={styles.inputLabel}>Role</Text>
+            <RolePicker value={inviteRole} onChange={setInviteRole} />
+
+            {isMaster() && inviteRole === 'owner' && (
+              <>
+                <Text style={styles.inputLabel}>Business Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="New Business Name"
+                  placeholderTextColor={theme.colors.textMuted}
+                  value={inviteBusinessName}
+                  onChangeText={setInviteBusinessName}
+                />
+
+                <Text style={styles.inputLabel}>Owner Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="John Smith"
+                  placeholderTextColor={theme.colors.textMuted}
+                  value={inviteOwnerName}
+                  onChangeText={setInviteOwnerName}
+                />
+              </>
+            )}
+
             <Text style={styles.inputLabel}>Email Address</Text>
             <TextInput
               style={styles.input}
@@ -817,9 +903,6 @@ export default function UserListScreen() {
               autoCorrect={false}
             />
 
-            <Text style={styles.inputLabel}>Role</Text>
-            <RolePicker value={inviteRole} onChange={setInviteRole} />
-
             <TouchableOpacity
               style={[styles.primaryButton, inviting && styles.buttonDisabled]}
               onPress={handleInvite}
@@ -830,7 +913,9 @@ export default function UserListScreen() {
               ) : (
                 <>
                   <Ionicons name="send" size={18} color={theme.colors.white} />
-                  <Text style={styles.primaryButtonText}>Send Invitation</Text>
+                  <Text style={styles.primaryButtonText}>
+                    {isMaster() && inviteRole === 'owner' ? 'Create Business' : 'Send Invitation'}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>

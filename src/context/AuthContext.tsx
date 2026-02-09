@@ -11,6 +11,10 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   isOwner: () => boolean;
+  isMaster: () => boolean;
+  allTenants: Tenant[];
+  switchTenant: (tenantId: string) => Promise<void>;
+  activeTenantId: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -20,6 +24,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [allTenants, setAllTenants] = useState<Tenant[]>([]);
+  const [activeTenantId, setActiveTenantId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -61,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         full_name: userData.full_name,
         tenant_id: userData.tenant_id,
         role: userData.role,
+        is_master: userData.is_master || false,
         customer_id: userData.customer_id,
         business_name: userData.business_name,
         contact_name: userData.contact_name,
@@ -73,6 +80,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUser(userProfile);
       setTenant(userData.tenant);
+      setActiveTenantId(userData.tenant_id);
+
+      // If master user, load all tenants
+      if (userData.is_master) {
+        const { data: tenantsData } = await supabase
+          .from('tenants')
+          .select('*')
+          .order('name');
+        setAllTenants(tenantsData || []);
+      }
     } catch (error) {
       console.error('Error fetching user profile:', error);
     } finally {
@@ -97,9 +114,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user?.role === 'owner';
   };
 
+  const isMaster = (): boolean => {
+    return user?.is_master === true;
+  };
+
+  const switchTenant = async (tenantId: string) => {
+    if (!user?.is_master) return;
+
+    const { data: tenantData, error } = await supabase
+      .from('tenants')
+      .select('*')
+      .eq('id', tenantId)
+      .single();
+
+    if (error) {
+      console.error('Error switching tenant:', error);
+      return;
+    }
+
+    setTenant(tenantData);
+    setActiveTenantId(tenantId);
+  };
+
   return (
     <AuthContext.Provider
-      value={{ session, user, tenant, isLoading, signIn, signOut, isOwner }}
+      value={{
+        session,
+        user,
+        tenant,
+        isLoading,
+        signIn,
+        signOut,
+        isOwner,
+        isMaster,
+        allTenants,
+        switchTenant,
+        activeTenantId
+      }}
     >
       {children}
     </AuthContext.Provider>

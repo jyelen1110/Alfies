@@ -320,11 +320,7 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.logoSection}>
-          <Image
-            source={require('../../assets/Alfies.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
+          <Ionicons name="cart" size={64} color={theme.colors.accent} />
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>
             {step === 'credentials' ? 'Set up your login' : 'Business Details'}

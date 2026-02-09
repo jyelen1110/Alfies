@@ -17,9 +17,10 @@ import { useAuth } from '../context/AuthContext';
 import { useOrders } from '../context/OrderContext';
 import { supabase } from '../lib/supabase';
 import { checkXeroConnection, connectXero, disconnectXero } from '../services/xero';
+import BusinessSwitcher from '../components/BusinessSwitcher';
 
 export default function SettingsScreen() {
-  const { user, tenant, signOut, isOwner } = useAuth();
+  const { user, tenant, signOut, isOwner, isMaster } = useAuth();
   const { state } = useOrders();
   const [signingOut, setSigningOut] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -178,34 +179,35 @@ export default function SettingsScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Profile Section */}
       <View style={styles.profileSection}>
-        <Image
-          source={require('../../assets/Alfies.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+        <View style={styles.logoPlaceholder}>
+          <Ionicons name="cart" size={48} color={theme.colors.accent} />
+        </View>
         <Text style={styles.businessName}>
-          {isOwner() ? (tenant?.name || "Alfie's Food Co.") : (user?.business_name || user?.full_name || 'Customer')}
+          {isOwner() ? (tenant?.name || 'My Business') : (user?.business_name || user?.full_name || 'Customer')}
         </Text>
         <View style={styles.profileInfo}>
           <Text style={styles.userName}>{user?.full_name}</Text>
           <Text style={styles.userEmail}>{user?.email}</Text>
           <View style={styles.roleBadge}>
             <Ionicons
-              name={isOwner() ? 'shield-checkmark' : 'person'}
+              name={isMaster() ? 'star' : isOwner() ? 'shield-checkmark' : 'person'}
               size={14}
-              color={isOwner() ? theme.colors.accent : theme.colors.info}
+              color={isMaster() ? theme.colors.warning : isOwner() ? theme.colors.accent : theme.colors.info}
             />
             <Text
               style={[
                 styles.roleText,
-                { color: isOwner() ? theme.colors.accent : theme.colors.info },
+                { color: isMaster() ? theme.colors.warning : isOwner() ? theme.colors.accent : theme.colors.info },
               ]}
             >
-              {isOwner() ? 'Owner' : 'Team Member'}
+              {isMaster() ? 'Master Admin' : isOwner() ? 'Owner' : 'Team Member'}
             </Text>
           </View>
         </View>
       </View>
+
+      {/* Business Switcher for Master Users */}
+      <BusinessSwitcher />
 
       {/* Stats Section */}
       <View style={styles.section}>
@@ -400,7 +402,7 @@ export default function SettingsScreen() {
         </Text>
       </TouchableOpacity>
 
-      <Text style={styles.version}>Alfie's Ordering v1.0.0</Text>
+      <Text style={styles.version}>Easy Ordering v1.0.0</Text>
 
       {/* Invite Modal */}
       <Modal visible={showInviteModal} animationType="slide" transparent>
@@ -487,11 +489,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: theme.spacing.lg,
   },
-  logo: {
+  logoPlaceholder: {
     width: 80,
     height: 80,
     borderRadius: 40,
     marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceHover,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   businessName: {
     fontSize: theme.fontSize.xxl,

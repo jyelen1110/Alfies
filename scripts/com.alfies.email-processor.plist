@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Unique identifier for the job -->
+    <key>Label</key>
+    <string>com.alfies.email-processor</string>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/path/to/Alfies</string>
+
+    <!-- Command to run -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/npx</string>
+        <string>tsx</string>
+        <string>scripts/process-order-emails.ts</string>
+    </array>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+        <key>SUPABASE_URL</key>
+        <string>https://cijgmmckafmfmmlpvgyi.supabase.co</string>
+        <!-- Set SUPABASE_SERVICE_ROLE_KEY via launchctl setenv or in this file -->
+    </dict>
+
+    <!-- Run every 5 minutes (300 seconds) -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <!-- Run immediately when loaded -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Logging -->
+    <key>StandardOutPath</key>
+    <string>/tmp/alfies-email-processor.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/alfies-email-processor.error.log</string>
+
+    <!-- Keep alive - restart if it crashes -->
+    <key>KeepAlive</key>
+    <false/>
+
+    <!-- Nice level - run with lower priority -->
+    <key>Nice</key>
+    <integer>10</integer>
+</dict>
+</plist>

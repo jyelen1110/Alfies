@@ -1,35 +1,47 @@
 {
   "expo": {
-    "name": "Alfie's Food Co.",
-    "slug": "alfies-ordering",
+    "name": "Easy Ordering",
+    "slug": "easy-ordering",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/Alfies.png",
+      "image": "./assets/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#2C3E50"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.alfiesfoodco.ordering"
+      "bundleIdentifier": "com.easyordering.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/Alfies.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#2C3E50"
       },
-      "package": "com.alfiesfoodco.ordering"
+      "package": "com.easyordering.app"
     },
     "web": {
-      "favicon": "./assets/Alfies.png"
+      "favicon": "./assets/icon.png",
+      "bundler": "metro",
+      "output": "single",
+      "name": "Easy Ordering",
+      "shortName": "EasyOrder"
     },
     "plugins": [
       "expo-asset",
       "expo-web-browser",
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ccb4367c-698d-4604-a21d-a46896932631"
+      }
+    }
   }
 }

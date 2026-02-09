@@ -90,14 +90,77 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Check if email already exists in auth
-    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
-    const emailExists = existingUsers?.users?.some(
+    // Check if email already exists as a customer in the database
+    const { data: existingCustomer } = await supabaseAdmin
+      .from('users')
+      .select('id, email, role, tenant_id, business_name')
+      .eq('email', customerData.email.toLowerCase())
+      .single();
+
+    if (existingCustomer) {
+      // User exists - check if they're a customer (not an owner)
+      if (existingCustomer.role !== 'user') {
+        return new Response(JSON.stringify({ error: 'Email belongs to an owner account, cannot add as customer' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Check if relationship already exists with this tenant
+      const { data: existingRelationship } = await supabaseAdmin
+        .from('customer_suppliers')
+        .select('id')
+        .eq('customer_id', existingCustomer.id)
+        .eq('supplier_tenant_id', callerData.tenant_id)
+        .single();
+
+      if (existingRelationship) {
+        return new Response(JSON.stringify({ error: 'Customer is already connected to your business' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Create new supplier relationship for existing customer
+      const { error: relationshipError } = await supabaseAdmin
+        .from('customer_suppliers')
+        .insert({
+          customer_id: existingCustomer.id,
+          supplier_tenant_id: callerData.tenant_id,
+          status: 'active',
+          accepted_at: new Date().toISOString(),
+        });
+
+      if (relationshipError) {
+        console.error('Failed to create customer relationship:', relationshipError);
+        return new Response(JSON.stringify({ error: 'Failed to connect customer' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.log('Connected existing customer:', existingCustomer.id);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          user_id: existingCustomer.id,
+          message: `Connected to existing customer: ${existingCustomer.business_name || existingCustomer.email}`,
+          existing_customer: true,
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Check if email exists in auth but not in users table (edge case)
+    const { data: existingAuthUsers } = await supabaseAdmin.auth.admin.listUsers();
+    const emailExistsInAuth = existingAuthUsers?.users?.some(
       u => u.email?.toLowerCase() === customerData.email.toLowerCase()
     );
 
-    if (emailExists) {
-      return new Response(JSON.stringify({ error: 'Email already registered' }), {
+    if (emailExistsInAuth) {
+      return new Response(JSON.stringify({ error: 'Email already registered but not as a customer' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -155,6 +218,23 @@ serve(async (req) => {
     }
 
     console.log('Database record created');
+
+    // Create customer_suppliers relationship for multi-supplier support
+    const { error: relationshipError } = await supabaseAdmin
+      .from('customer_suppliers')
+      .insert({
+        customer_id: authUser.user.id,
+        supplier_tenant_id: callerData.tenant_id,
+        status: 'active',
+        accepted_at: new Date().toISOString(),
+      });
+
+    if (relationshipError) {
+      console.warn('Failed to create customer_suppliers relationship:', relationshipError);
+      // Don't fail the whole operation - the user is created, relationship can be added later
+    } else {
+      console.log('Customer supplier relationship created');
+    }
 
     // Send password reset email so customer can set their own password
     const { error: resetError } = await supabaseAdmin.auth.admin.generateLink({

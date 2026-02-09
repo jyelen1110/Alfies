@@ -1,7 +1,7 @@
-// Alfie's Food Co. theme - charcoal/warm palette inspired by the logo
+// Easy Ordering theme - charcoal/warm palette
 export const theme = {
   colors: {
-    // Primary: dark charcoal matching the Alfie's badge
+    // Primary: dark charcoal
     primary: '#2C3E50',
     primaryLight: '#34495E',
     primaryDark: '#1A252F',

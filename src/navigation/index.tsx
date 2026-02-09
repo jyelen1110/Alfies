@@ -23,15 +23,11 @@ import FavouritesScreen from '../screens/FavouritesScreen';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-// Logo component for header (wrapped in View to prevent button behavior)
-function HeaderLogo() {
+// Header title component (wrapped in View to prevent button behavior)
+function HeaderTitle() {
   return (
-    <View pointerEvents="none" style={styles.headerLogoWrapper}>
-      <Image
-        source={require('../../Alfies.png')}
-        style={styles.headerLogo}
-        resizeMode="contain"
-      />
+    <View pointerEvents="none" style={styles.headerTitleWrapper}>
+      <Text style={styles.headerTitleText}>Easy Ordering</Text>
     </View>
   );
 }
@@ -43,7 +39,7 @@ function ShopStack() {
         headerStyle: { backgroundColor: theme.colors.primary },
         headerTintColor: theme.colors.white,
         headerTitleStyle: { fontWeight: theme.fontWeight.semibold },
-        headerLeft: () => <HeaderLogo />,
+        headerLeft: () => <HeaderTitle />,
       }}
     >
       <Stack.Screen
@@ -67,7 +63,7 @@ function ItemsStack() {
         headerStyle: { backgroundColor: theme.colors.primary },
         headerTintColor: theme.colors.white,
         headerTitleStyle: { fontWeight: theme.fontWeight.semibold },
-        headerLeft: () => <HeaderLogo />,
+        headerLeft: () => <HeaderTitle />,
       }}
     >
       <Stack.Screen
@@ -140,7 +136,7 @@ function MainTabs() {
           headerStyle: { backgroundColor: theme.colors.primary },
           headerTintColor: theme.colors.white,
           headerTitleStyle: { fontWeight: theme.fontWeight.semibold },
-          headerLeft: () => <HeaderLogo />,
+          headerLeft: () => <HeaderTitle />,
         }}
       >
         <Tab.Screen
@@ -213,7 +209,7 @@ function MainTabs() {
         headerStyle: { backgroundColor: theme.colors.primary },
         headerTintColor: theme.colors.white,
         headerTitleStyle: { fontWeight: theme.fontWeight.semibold },
-        headerLeft: () => <HeaderLogo />,
+        headerLeft: () => <HeaderTitle />,
       }}
     >
       <Tab.Screen
@@ -273,12 +269,8 @@ export default function Navigation() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <Image
-          source={require('../../Alfies.png')}
-          style={styles.loadingLogo}
-          resizeMode="contain"
-        />
-        <Text style={styles.loadingText}>Alfie's Food Co.</Text>
+        <Ionicons name="cart" size={64} color={theme.colors.accent} />
+        <Text style={styles.loadingText}>Easy Ordering</Text>
       </View>
     );
   }
@@ -329,15 +321,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: theme.fontWeight.bold,
   },
-  headerLogoWrapper: {
+  headerTitleWrapper: {
     marginLeft: theme.spacing.md,
   },
-  headerLogo: {
-    width: 32,
-    height: 32,
-  },
-  loadingLogo: {
-    width: 100,
-    height: 100,
+  headerTitleText: {
+    color: theme.colors.white,
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.bold,
   },
 });

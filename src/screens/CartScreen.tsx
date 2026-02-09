@@ -18,7 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useOrders } from '../context/OrderContext';
 import { useAuth } from '../context/AuthContext';
 import { theme } from '../theme';
-import { CartItem, Supplier, formatCutoffTime } from '../types';
+import { CartItem, Supplier, formatCutoffTime, Tenant } from '../types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -79,6 +79,8 @@ function formatCurrency(value: number): string {
 
 interface SupplierSection {
   supplier: Supplier;
+  tenant?: Tenant; // For multi-supplier customers, includes the owner's tenant info
+  tenantId: string; // The tenant ID for this section
   data: CartItem[];
 }
 
@@ -88,18 +90,28 @@ interface SupplierSection {
 
 export default function CartScreen() {
   const navigation = useNavigation();
-  const { state, updateCartQuantity, removeFromCart, clearCart, createOrder, getSupplierName } =
-    useOrders();
+  const {
+    state,
+    updateCartQuantity,
+    removeFromCart,
+    clearCart,
+    clearCartByTenant,
+    createOrder,
+    createOrderForTenant,
+    getSupplierName,
+    getTenantName,
+  } = useOrders();
   const { user, tenant, isOwner } = useAuth();
 
-  const { cart, suppliers } = state;
+  const { cart, suppliers, connectedTenants } = state;
+  const isCustomer = user?.role === 'user';
 
-  // Per-supplier state
+  // Per-section state (keyed by tenantId for customers, supplierId for owners)
   const [deliveryDates, setDeliveryDates] = useState<Record<string, Date>>({});
   const [orderNotes, setOrderNotes] = useState<Record<string, string>>({});
 
-  // Modals
-  const [datePickerSupplier, setDatePickerSupplier] = useState<string | null>(null);
+  // Modals - store section key (tenantId for customers, supplierId for owners)
+  const [datePickerSection, setDatePickerSection] = useState<string | null>(null);
   const [confirmationVisible, setConfirmationVisible] = useState(false);
   const [confirmationData, setConfirmationData] = useState<{
     supplierName: string;
@@ -111,20 +123,50 @@ export default function CartScreen() {
   // ---- Sections ----------------------------------------------------------
 
   const sections: SupplierSection[] = useMemo(() => {
-    const grouped: Record<string, CartItem[]> = {};
-    for (const cartItem of cart) {
-      const sid = cartItem.item.supplier_id;
-      if (!grouped[sid]) grouped[sid] = [];
-      grouped[sid].push(cartItem);
+    if (isCustomer) {
+      // For customers: group by tenant (owner/supplier business)
+      const grouped: Record<string, CartItem[]> = {};
+      for (const cartItem of cart) {
+        const tid = cartItem.item.tenant_id;
+        if (!grouped[tid]) grouped[tid] = [];
+        grouped[tid].push(cartItem);
+      }
+      return Object.entries(grouped)
+        .map(([tenantId, items]) => {
+          // Find the tenant info
+          const tenantInfo = connectedTenants.find((t) => t.id === tenantId);
+          // Find the first supplier for this tenant (for delivery info)
+          const supplier = suppliers.find((s) => s.tenant_id === tenantId);
+          if (!supplier) return null;
+          return {
+            supplier,
+            tenant: tenantInfo,
+            tenantId,
+            data: items,
+          };
+        })
+        .filter(Boolean) as SupplierSection[];
+    } else {
+      // For owners: group by supplier (original behavior)
+      const grouped: Record<string, CartItem[]> = {};
+      for (const cartItem of cart) {
+        const sid = cartItem.item.supplier_id;
+        if (!grouped[sid]) grouped[sid] = [];
+        grouped[sid].push(cartItem);
+      }
+      return Object.entries(grouped)
+        .map(([supplierId, items]) => {
+          const supplier = suppliers.find((s) => s.id === supplierId);
+          if (!supplier) return null;
+          return {
+            supplier,
+            tenantId: supplier.tenant_id,
+            data: items,
+          };
+        })
+        .filter(Boolean) as SupplierSection[];
     }
-    return Object.entries(grouped)
-      .map(([supplierId, items]) => {
-        const supplier = suppliers.find((s) => s.id === supplierId);
-        if (!supplier) return null;
-        return { supplier, data: items };
-      })
-      .filter(Boolean) as SupplierSection[];
-  }, [cart, suppliers]);
+  }, [cart, suppliers, connectedTenants, isCustomer]);
 
   // ---- Per-supplier calculations -----------------------------------------
 
@@ -178,31 +220,33 @@ export default function CartScreen() {
     [removeFromCart],
   );
 
-  const handleSelectDate = useCallback((supplierId: string, date: Date) => {
-    setDeliveryDates((prev) => ({ ...prev, [supplierId]: date }));
-    setDatePickerSupplier(null);
+  const handleSelectDate = useCallback((sectionKey: string, date: Date) => {
+    setDeliveryDates((prev) => ({ ...prev, [sectionKey]: date }));
+    setDatePickerSection(null);
   }, []);
 
   const handlePlaceOrder = useCallback(
     async (section: SupplierSection) => {
-      const { supplier, data: items } = section;
+      const { supplier, tenant: sectionTenant, tenantId, data: items } = section;
       const subtotal = getSubtotal(items);
+      const sectionKey = isCustomer ? tenantId : supplier.id;
+      const displayName = isCustomer && sectionTenant ? sectionTenant.name : supplier.name;
 
       if (subtotal < supplier.min_order) {
         Alert.alert(
           'Minimum order not met',
-          `The minimum order for ${supplier.name} is ${formatCurrency(supplier.min_order)}. Your current subtotal is ${formatCurrency(subtotal)}.`,
+          `The minimum order for ${displayName} is ${formatCurrency(supplier.min_order)}. Your current subtotal is ${formatCurrency(subtotal)}.`,
         );
         return;
       }
 
-      const selectedDate = deliveryDates[supplier.id];
+      const selectedDate = deliveryDates[sectionKey];
       if (!selectedDate) {
         Alert.alert('Select delivery date', 'Please select a delivery date before placing the order.');
         return;
       }
 
-      setPlacingOrder(supplier.id);
+      setPlacingOrder(sectionKey);
 
       try {
         const gst = getGST(items);
@@ -218,33 +262,56 @@ export default function CartScreen() {
           total: ci.item.wholesale_price * ci.quantity,
         }));
 
-        const order = await createOrder({
-          supplier_id: supplier.id,
-          order_date: new Date().toISOString().split('T')[0],
-          requested_delivery_date: formatDateISO(selectedDate),
-          subtotal,
-          tax: gst,
-          delivery_fee: deliveryFee,
-          total,
-          status: 'draft', // createOrder will override based on role
-          notes: orderNotes[supplier.id] || undefined,
-          items: orderItems,
-        });
+        let order;
+        if (isCustomer) {
+          // Customer: create order for the supplier's tenant
+          order = await createOrderForTenant(tenantId, {
+            supplier_id: supplier.id,
+            order_date: new Date().toISOString().split('T')[0],
+            requested_delivery_date: formatDateISO(selectedDate),
+            subtotal,
+            tax: gst,
+            delivery_fee: deliveryFee,
+            total,
+            status: 'pending_approval',
+            notes: orderNotes[sectionKey] || undefined,
+            items: orderItems,
+          });
+        } else {
+          // Owner: use existing createOrder
+          order = await createOrder({
+            supplier_id: supplier.id,
+            order_date: new Date().toISOString().split('T')[0],
+            requested_delivery_date: formatDateISO(selectedDate),
+            subtotal,
+            tax: gst,
+            delivery_fee: deliveryFee,
+            total,
+            status: 'draft', // createOrder will override based on role
+            notes: orderNotes[sectionKey] || undefined,
+            items: orderItems,
+          });
+        }
 
         if (order) {
-          await clearCart(supplier.id);
+          // Clear cart items for this section
+          if (isCustomer) {
+            await clearCartByTenant(tenantId);
+          } else {
+            await clearCart(supplier.id);
+          }
           setDeliveryDates((prev) => {
             const next = { ...prev };
-            delete next[supplier.id];
+            delete next[sectionKey];
             return next;
           });
           setOrderNotes((prev) => {
             const next = { ...prev };
-            delete next[supplier.id];
+            delete next[sectionKey];
             return next;
           });
           setConfirmationData({
-            supplierName: supplier.name,
+            supplierName: displayName,
             orderNumber: order.order_number || order.id.substring(0, 8).toUpperCase(),
             isApproved: isOwner(),
           });
@@ -266,8 +333,11 @@ export default function CartScreen() {
       getGST,
       getDeliveryFee,
       createOrder,
+      createOrderForTenant,
       clearCart,
+      clearCartByTenant,
       isOwner,
+      isCustomer,
     ],
   );
 
@@ -331,8 +401,10 @@ export default function CartScreen() {
 
   const renderSectionHeader = useCallback(
     ({ section }: { section: SupplierSection }) => {
-      const { supplier } = section;
-      const selectedDate = deliveryDates[supplier.id];
+      const { supplier, tenant: sectionTenant, tenantId } = section;
+      const sectionKey = isCustomer ? tenantId : supplier.id;
+      const displayName = isCustomer && sectionTenant ? sectionTenant.name : supplier.name;
+      const selectedDate = deliveryDates[sectionKey];
       const availableDates = getAvailableDeliveryDates(supplier);
 
       return (
@@ -340,7 +412,7 @@ export default function CartScreen() {
           <View style={styles.sectionHeaderTop}>
             <View style={styles.supplierInfo}>
               <Ionicons name="storefront-outline" size={20} color={theme.colors.primary} />
-              <Text style={styles.supplierName}>{supplier.name}</Text>
+              <Text style={styles.supplierName}>{displayName}</Text>
             </View>
             <View style={styles.cutoffBadge}>
               <Ionicons name="time-outline" size={14} color={theme.colors.warning} />
@@ -352,7 +424,7 @@ export default function CartScreen() {
 
           <TouchableOpacity
             style={styles.datePickerButton}
-            onPress={() => setDatePickerSupplier(supplier.id)}
+            onPress={() => setDatePickerSection(sectionKey)}
           >
             <Ionicons name="calendar-outline" size={18} color={theme.colors.accent} />
             <Text style={styles.datePickerText}>
@@ -363,18 +435,19 @@ export default function CartScreen() {
         </View>
       );
     },
-    [deliveryDates],
+    [deliveryDates, isCustomer],
   );
 
   const renderSectionFooter = useCallback(
     ({ section }: { section: SupplierSection }) => {
-      const { supplier, data: items } = section;
+      const { supplier, tenantId, data: items } = section;
+      const sectionKey = isCustomer ? tenantId : supplier.id;
       const subtotal = getSubtotal(items);
       const gst = getGST(items);
       const deliveryFee = getDeliveryFee(supplier, subtotal);
       const total = subtotal + gst + deliveryFee;
       const belowMinimum = subtotal < supplier.min_order;
-      const isPlacing = placingOrder === supplier.id;
+      const isPlacing = placingOrder === sectionKey;
 
       // Free delivery progress
       let freeDeliveryHint: string | null = null;
@@ -393,11 +466,11 @@ export default function CartScreen() {
             <Text style={styles.notesLabel}>Order notes</Text>
             <TextInput
               style={styles.notesInput}
-              placeholder="Add notes for this supplier..."
+              placeholder="Add notes for this order..."
               placeholderTextColor={theme.colors.textLight}
-              value={orderNotes[supplier.id] || ''}
+              value={orderNotes[sectionKey] || ''}
               onChangeText={(text) =>
-                setOrderNotes((prev) => ({ ...prev, [supplier.id]: text }))
+                setOrderNotes((prev) => ({ ...prev, [sectionKey]: text }))
               }
               multiline
               numberOfLines={2}
@@ -505,6 +578,7 @@ export default function CartScreen() {
       getGST,
       getDeliveryFee,
       handlePlaceOrder,
+      isCustomer,
     ],
   );
 
@@ -531,12 +605,17 @@ export default function CartScreen() {
 
   // ---- Date picker modal data --------------------------------------------
 
-  const datePickerSupplierObj = datePickerSupplier
-    ? suppliers.find((s) => s.id === datePickerSupplier) || null
+  // Find the section for the date picker
+  const datePickerSectionObj = datePickerSection
+    ? sections.find((s) => (isCustomer ? s.tenantId : s.supplier.id) === datePickerSection) || null
     : null;
+  const datePickerSupplierObj = datePickerSectionObj?.supplier || null;
   const datePickerDates = datePickerSupplierObj
     ? getAvailableDeliveryDates(datePickerSupplierObj)
     : [];
+  const datePickerDisplayName = datePickerSectionObj
+    ? (isCustomer && datePickerSectionObj.tenant ? datePickerSectionObj.tenant.name : datePickerSupplierObj?.name)
+    : '';
 
   // ---- Render ------------------------------------------------------------
 
@@ -556,22 +635,22 @@ export default function CartScreen() {
 
       {/* Delivery date picker modal */}
       <Modal
-        visible={datePickerSupplier !== null}
+        visible={datePickerSection !== null}
         transparent
         animationType="slide"
-        onRequestClose={() => setDatePickerSupplier(null)}
+        onRequestClose={() => setDatePickerSection(null)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Delivery Date</Text>
-              <TouchableOpacity onPress={() => setDatePickerSupplier(null)}>
+              <TouchableOpacity onPress={() => setDatePickerSection(null)}>
                 <Ionicons name="close" size={24} color={theme.colors.text} />
               </TouchableOpacity>
             </View>
             {datePickerSupplierObj && (
               <Text style={styles.modalSubtitle}>
-                {datePickerSupplierObj.name} delivers on{' '}
+                {datePickerDisplayName} delivers on{' '}
                 {datePickerSupplierObj.delivery_days
                   .map((d) => d.charAt(0).toUpperCase() + d.slice(1))
                   .join(', ')}
@@ -582,13 +661,13 @@ export default function CartScreen() {
               keyExtractor={(item) => item.toISOString()}
               renderItem={({ item: date }) => {
                 const isSelected =
-                  datePickerSupplier &&
-                  deliveryDates[datePickerSupplier] &&
-                  formatDateISO(deliveryDates[datePickerSupplier]) === formatDateISO(date);
+                  datePickerSection &&
+                  deliveryDates[datePickerSection] &&
+                  formatDateISO(deliveryDates[datePickerSection]) === formatDateISO(date);
                 return (
                   <TouchableOpacity
                     style={[styles.dateOption, isSelected && styles.dateOptionSelected]}
-                    onPress={() => handleSelectDate(datePickerSupplier!, date)}
+                    onPress={() => handleSelectDate(datePickerSection!, date)}
                     activeOpacity={0.7}
                   >
                     <Ionicons
@@ -637,7 +716,7 @@ export default function CartScreen() {
             <Text style={styles.confirmationMessage}>
               {confirmationData?.isApproved
                 ? `Your order has been confirmed and will be processed.`
-                : `Your order has been sent to Alfie's Food Co for approval.`}
+                : `Your order has been submitted for approval.`}
             </Text>
             {confirmationData?.orderNumber && (
               <Text style={styles.confirmationOrderNumber}>

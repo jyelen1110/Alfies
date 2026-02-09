@@ -7,6 +7,7 @@ export interface User {
   full_name: string;
   tenant_id: string;
   role: UserRole;
+  is_master?: boolean;
   // Customer profile fields
   customer_id?: string; // Owner-assigned customer ID
   business_name?: string;
@@ -16,6 +17,28 @@ export interface User {
   accounts_email?: string;
   delivery_address?: string;
   delivery_instructions?: string;
+}
+
+// Tenant access for master users
+export interface TenantAccess {
+  id: string;
+  user_id: string;
+  tenant_id: string;
+  access_level: 'full' | 'read_only';
+  created_at: string;
+}
+
+// Customer-Supplier relationship (multi-supplier support)
+export interface CustomerSupplier {
+  id: string;
+  customer_id: string;
+  supplier_tenant_id: string;
+  status: 'active' | 'pending' | 'inactive';
+  invited_at: string;
+  accepted_at?: string;
+  created_at: string;
+  // Joined data
+  tenant?: Tenant;
 }
 
 // Invitation types
@@ -87,6 +110,7 @@ export interface Item {
   supplier_id: string;
   status: 'active' | 'inactive' | 'sold_out';
   image_url?: string;
+  image_path?: string; // Device-uploaded image in Supabase Storage
   is_favourite?: boolean;
   import_batch_id?: string;
   created_at?: string;

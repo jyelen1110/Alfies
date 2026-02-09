@@ -414,8 +414,9 @@ export default function ApprovalsScreen() {
 
     setIsProcessing(true);
     try {
-      const supplier = state.suppliers.find((s) => s.name.toLowerCase().includes('alfie'));
-      const supplierId = supplier?.id || state.suppliers[0]?.id || '';
+      // Use the first (default) supplier for orders
+      const supplier = state.suppliers[0];
+      const supplierId = supplier?.id || '';
 
       const orderNumber = `MO-${Date.now().toString().slice(-8)}`;
       const total = getManualOrderTotal();
@@ -598,8 +599,9 @@ export default function ApprovalsScreen() {
 
     setIsProcessing(true);
     try {
-      const supplier = state.suppliers.find((s) => s.name.toLowerCase().includes('alfie'));
-      const supplierId = supplier?.id || state.suppliers[0]?.id || '';
+      // Use the first (default) supplier for orders
+      const supplier = state.suppliers[0];
+      const supplierId = supplier?.id || '';
 
       const orderNumber = parsedCSV?.orderNumber || `IMP-${Date.now().toString().slice(-8)}`;
 

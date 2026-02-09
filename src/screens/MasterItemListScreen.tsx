@@ -14,9 +14,13 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { theme } from '../theme';
 import { useOrders } from '../context/OrderContext';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import { Item, Supplier, CATEGORIES } from '../types';
 
 interface EditItemModalProps {
@@ -52,8 +56,11 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
     xero_item_code: '',
     status: 'active' as 'active' | 'inactive' | 'sold_out',
     image_url: '',
+    image_path: '',
     supplier_id: '',
   });
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [localImageUri, setLocalImageUri] = useState<string | null>(null);
 
   // Update form when item changes
   useMemo(() => {
@@ -74,8 +81,10 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
         xero_item_code: item.xero_item_code || '',
         status: item.status || 'active',
         image_url: item.image_url || '',
+        image_path: item.image_path || '',
         supplier_id: item.supplier_id || '',
       });
+      setLocalImageUri(null);
     } else if (isNew) {
       // Reset form for new item
       setFormData({
@@ -94,13 +103,85 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
         xero_item_code: '',
         status: 'active',
         image_url: '',
+        image_path: '',
         supplier_id: suppliers.length > 0 ? suppliers[0].id : '',
       });
+      setLocalImageUri(null);
     }
   }, [item, isNew, suppliers]);
 
   const updateField = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setLocalImageUri(asset.uri);
+        setUploadingImage(true);
+
+        // Upload to Supabase Storage
+        const fileName = `item-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+        const fileExt = asset.uri.split('.').pop() || 'jpg';
+        const filePath = `${fileName}.${fileExt}`;
+
+        // Fetch the image as blob
+        const response = await fetch(asset.uri);
+        const blob = await response.blob();
+
+        // Convert blob to ArrayBuffer for upload
+        const arrayBuffer = await new Response(blob).arrayBuffer();
+
+        const { error: uploadError } = await supabase.storage
+          .from('item-images')
+          .upload(filePath, arrayBuffer, {
+            contentType: blob.type || 'image/jpeg',
+            upsert: false,
+          });
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          Alert.alert('Error', 'Failed to upload image');
+          setLocalImageUri(null);
+        } else {
+          // Get public URL
+          const { data: urlData } = supabase.storage
+            .from('item-images')
+            .getPublicUrl(filePath);
+
+          setFormData(prev => ({ ...prev, image_path: filePath }));
+          // Clear image_url since device image takes precedence
+          setFormData(prev => ({ ...prev, image_url: '' }));
+        }
+        setUploadingImage(false);
+      }
+    } catch (error) {
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Failed to select image');
+      setUploadingImage(false);
+    }
+  };
+
+  const removeImage = () => {
+    setLocalImageUri(null);
+    setFormData(prev => ({ ...prev, image_path: '' }));
+  };
+
+  const getImageSource = () => {
+    if (localImageUri) return { uri: localImageUri };
+    if (formData.image_path) {
+      const { data } = supabase.storage.from('item-images').getPublicUrl(formData.image_path);
+      return { uri: data.publicUrl };
+    }
+    if (formData.image_url) return { uri: formData.image_url };
+    return null;
   };
 
   const handleSave = () => {
@@ -135,7 +216,8 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
       xero_account_code: formData.xero_account_code || undefined,
       xero_item_code: formData.xero_item_code || undefined,
       status: formData.status,
-      image_url: formData.image_url || undefined,
+      image_url: formData.image_path ? undefined : (formData.image_url || undefined),
+      image_path: formData.image_path || undefined,
       is_favourite: item?.is_favourite || false,
     } as Item;
     onSave(updatedItem);
@@ -347,14 +429,48 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
             {/* Image Section */}
             <Text style={styles.sectionTitle}>Image</Text>
 
-            <Text style={styles.inputLabel}>Image URL</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.image_url}
-              onChangeText={(v) => updateField('image_url', v)}
-              placeholder="https://example.com/image.jpg"
-              autoCapitalize="none"
-            />
+            {/* Image Preview */}
+            {getImageSource() && (
+              <View style={styles.imagePreviewContainer}>
+                <Image source={getImageSource()!} style={styles.imagePreview} />
+                {formData.image_path && (
+                  <TouchableOpacity style={styles.removeImageButton} onPress={removeImage}>
+                    <Ionicons name="close-circle" size={24} color={theme.colors.danger} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* Upload from Device */}
+            <TouchableOpacity
+              style={[styles.uploadButton, uploadingImage && styles.uploadButtonDisabled]}
+              onPress={pickImage}
+              disabled={uploadingImage}
+            >
+              {uploadingImage ? (
+                <ActivityIndicator size="small" color={theme.colors.white} />
+              ) : (
+                <>
+                  <Ionicons name="camera-outline" size={20} color={theme.colors.white} />
+                  <Text style={styles.uploadButtonText}>
+                    {formData.image_path ? 'Change Image' : 'Upload from Device'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {!formData.image_path && (
+              <>
+                <Text style={styles.orText}>— or use URL —</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={formData.image_url}
+                  onChangeText={(v) => updateField('image_url', v)}
+                  placeholder="https://example.com/image.jpg"
+                  autoCapitalize="none"
+                />
+              </>
+            )}
 
             {/* Spacer for scroll */}
             <View style={{ height: 20 }} />
@@ -393,6 +509,15 @@ export default function MasterItemListScreen() {
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [sortBy, setSortBy] = useState<'name' | 'price' | 'category'>('name');
   const [sortAsc, setSortAsc] = useState(true);
+
+  // AI Import state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importProcessing, setImportProcessing] = useState(false);
+  const [importedItems, setImportedItems] = useState<any[]>([]);
+  const [selectedImportItems, setSelectedImportItems] = useState<Set<number>>(new Set());
+  const [importStep, setImportStep] = useState<'select' | 'processing' | 'review'>('select');
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSupplierId, setImportSupplierId] = useState<string>('');
 
   // Pull to refresh
   const onRefresh = useCallback(async () => {
@@ -473,6 +598,131 @@ export default function MasterItemListScreen() {
       await updateItem(updatedItem);
       setShowEditModal(false);
       setEditingItem(null);
+    }
+  };
+
+  // AI Import Functions
+  const supabaseUrl = 'https://cijgmmckafmfmmlpvgyi.supabase.co';
+
+  const handleOpenImport = () => {
+    setShowImportModal(true);
+    setImportStep('select');
+    setImportedItems([]);
+    setSelectedImportItems(new Set());
+    setImportError(null);
+    setImportSupplierId(state.suppliers[0]?.id || '');
+  };
+
+  const handlePickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) return;
+
+      const file = result.assets[0];
+      setImportStep('processing');
+      setImportProcessing(true);
+      setImportError(null);
+
+      // Read file as base64
+      const fileContent = await FileSystem.readAsStringAsync(file.uri, {
+        encoding: 'base64',
+      });
+
+      // Determine file type
+      const fileType = file.mimeType?.includes('image') ? 'image' :
+                       file.mimeType?.includes('pdf') ? 'pdf-image' : 'text';
+
+      // Call the parse-document Edge Function
+      const response = await fetch(`${supabaseUrl}/functions/v1/parse-document`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileContent,
+          fileType,
+          pageNumber: 1,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        throw new Error(data.error || 'Failed to process document');
+      }
+
+      if (data.items && data.items.length > 0) {
+        setImportedItems(data.items);
+        // Select all items by default
+        setSelectedImportItems(new Set(data.items.map((_: any, i: number) => i)));
+        setImportStep('review');
+      } else {
+        setImportError('No items found in the document. Try a different file or format.');
+        setImportStep('select');
+      }
+    } catch (error: any) {
+      console.error('Import error:', error);
+      setImportError(error.message || 'Failed to process document');
+      setImportStep('select');
+    } finally {
+      setImportProcessing(false);
+    }
+  };
+
+  const toggleImportItem = (index: number) => {
+    setSelectedImportItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importSupplierId) {
+      Alert.alert('Error', 'Please select a supplier');
+      return;
+    }
+
+    const itemsToImport = importedItems.filter((_, i) => selectedImportItems.has(i));
+    if (itemsToImport.length === 0) {
+      Alert.alert('Error', 'Please select at least one item to import');
+      return;
+    }
+
+    setImportProcessing(true);
+    try {
+      let successCount = 0;
+      for (const item of itemsToImport) {
+        const result = await createItem({
+          name: item.name,
+          supplier_id: importSupplierId,
+          category: item.category || undefined,
+          barcode: item.barcode || undefined,
+          sku: item.sku || undefined,
+          wholesale_price: item.wholesale_price || 0,
+          rrp: item.rrp || undefined,
+          carton_size: item.carton_size || undefined,
+          size: item.size || undefined,
+          country_of_origin: item.country_of_origin || undefined,
+          status: 'active',
+        });
+        if (result) successCount++;
+      }
+
+      Alert.alert('Import Complete', `Successfully imported ${successCount} of ${itemsToImport.length} items.`);
+      setShowImportModal(false);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to import some items');
+    } finally {
+      setImportProcessing(false);
     }
   };
 
@@ -589,6 +839,14 @@ export default function MasterItemListScreen() {
             <Text style={styles.statLabel}>Suppliers</Text>
           </View>
         </View>
+
+        {/* Import button */}
+        <TouchableOpacity
+          style={styles.importButton}
+          onPress={handleOpenImport}
+        >
+          <Ionicons name="cloud-upload-outline" size={20} color={theme.colors.accent} />
+        </TouchableOpacity>
 
         {/* Add button */}
         <TouchableOpacity
@@ -761,6 +1019,145 @@ export default function MasterItemListScreen() {
         }}
         onSave={handleSaveItem}
       />
+
+      {/* AI Import Modal */}
+      <Modal
+        visible={showImportModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowImportModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setShowImportModal(false)}>
+                <Ionicons name="close" size={24} color={theme.colors.text} />
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Import Items (AI)</Text>
+              <View style={{ width: 24 }} />
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              {importStep === 'select' && (
+                <View style={styles.importSelectStep}>
+                  <Ionicons name="document-text-outline" size={64} color={theme.colors.accent} />
+                  <Text style={styles.importTitle}>Import from Document</Text>
+                  <Text style={styles.importDescription}>
+                    Upload a PDF, image, or spreadsheet and AI will extract product information automatically.
+                  </Text>
+
+                  <Text style={styles.inputLabel}>Select Supplier</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.supplierSelect}>
+                    {state.suppliers.map((supplier) => (
+                      <TouchableOpacity
+                        key={supplier.id}
+                        style={[
+                          styles.supplierOption,
+                          importSupplierId === supplier.id && styles.supplierOptionActive,
+                        ]}
+                        onPress={() => setImportSupplierId(supplier.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.supplierOptionText,
+                            importSupplierId === supplier.id && styles.supplierOptionTextActive,
+                          ]}
+                        >
+                          {supplier.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+
+                  {importError && (
+                    <View style={styles.importError}>
+                      <Ionicons name="alert-circle" size={20} color={theme.colors.danger} />
+                      <Text style={styles.importErrorText}>{importError}</Text>
+                    </View>
+                  )}
+
+                  <TouchableOpacity
+                    style={[styles.uploadDocButton, !importSupplierId && styles.uploadDocButtonDisabled]}
+                    onPress={handlePickDocument}
+                    disabled={!importSupplierId}
+                  >
+                    <Ionicons name="cloud-upload-outline" size={24} color={theme.colors.white} />
+                    <Text style={styles.uploadDocButtonText}>Select Document</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {importStep === 'processing' && (
+                <View style={styles.importProcessingStep}>
+                  <ActivityIndicator size="large" color={theme.colors.accent} />
+                  <Text style={styles.importTitle}>Processing Document...</Text>
+                  <Text style={styles.importDescription}>
+                    AI is reading your document and extracting product information. This may take a moment.
+                  </Text>
+                </View>
+              )}
+
+              {importStep === 'review' && (
+                <View style={styles.importReviewStep}>
+                  <Text style={styles.importTitle}>Review Items ({selectedImportItems.size} selected)</Text>
+                  <Text style={styles.importDescription}>
+                    Tap items to select/deselect them for import.
+                  </Text>
+
+                  {importedItems.map((item, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={[
+                        styles.importItemCard,
+                        selectedImportItems.has(index) && styles.importItemCardSelected,
+                      ]}
+                      onPress={() => toggleImportItem(index)}
+                    >
+                      <View style={styles.importItemCheck}>
+                        <Ionicons
+                          name={selectedImportItems.has(index) ? 'checkbox' : 'square-outline'}
+                          size={24}
+                          color={selectedImportItems.has(index) ? theme.colors.accent : theme.colors.textMuted}
+                        />
+                      </View>
+                      <View style={styles.importItemInfo}>
+                        <Text style={styles.importItemName}>{item.name}</Text>
+                        <View style={styles.importItemDetails}>
+                          {item.barcode && <Text style={styles.importItemDetail}>Barcode: {item.barcode}</Text>}
+                          {item.wholesale_price && <Text style={styles.importItemDetail}>Price: ${item.wholesale_price}</Text>}
+                          {item.category && <Text style={styles.importItemDetail}>Category: {item.category}</Text>}
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
+
+            {importStep === 'review' && (
+              <View style={styles.modalFooter}>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => setImportStep('select')}
+                >
+                  <Text style={styles.cancelButtonText}>Back</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.saveButton, importProcessing && styles.saveButtonDisabled]}
+                  onPress={handleConfirmImport}
+                  disabled={importProcessing || selectedImportItems.size === 0}
+                >
+                  {importProcessing ? (
+                    <ActivityIndicator size="small" color={theme.colors.white} />
+                  ) : (
+                    <Text style={styles.saveButtonText}>Import {selectedImportItems.size} Items</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -798,6 +1195,15 @@ const styles = StyleSheet.create({
     ...theme.shadow.sm,
   },
 
+  // Import button
+  importButton: {
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.accent,
+    ...theme.shadow.sm,
+  },
   // Add button
   addButton: {
     flexDirection: 'row',
@@ -1159,6 +1565,49 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
+  // Image upload styles
+  imagePreviewContainer: {
+    position: 'relative',
+    marginBottom: theme.spacing.md,
+    alignItems: 'center',
+  },
+  imagePreview: {
+    width: 150,
+    height: 150,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.backgroundLight,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: '25%',
+    backgroundColor: theme.colors.white,
+    borderRadius: 12,
+  },
+  uploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.accent,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+  },
+  uploadButtonDisabled: {
+    opacity: 0.6,
+  },
+  uploadButtonText: {
+    color: theme.colors.white,
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.medium,
+  },
+  orText: {
+    textAlign: 'center',
+    color: theme.colors.textMuted,
+    fontSize: theme.fontSize.sm,
+    marginVertical: theme.spacing.sm,
+  },
   categorySelect: {
     marginTop: theme.spacing.xs,
     marginBottom: theme.spacing.md,
@@ -1215,5 +1664,129 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.md,
     fontWeight: theme.fontWeight.semibold,
     color: theme.colors.white,
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
+  },
+  // Import modal styles
+  importSelectStep: {
+    alignItems: 'center',
+    padding: theme.spacing.xl,
+  },
+  importTitle: {
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    textAlign: 'center',
+  },
+  importDescription: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    marginBottom: theme.spacing.lg,
+    lineHeight: 22,
+  },
+  supplierSelect: {
+    marginVertical: theme.spacing.md,
+    maxHeight: 50,
+  },
+  supplierOption: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.background,
+    marginRight: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  supplierOptionActive: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+  },
+  supplierOptionText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.text,
+  },
+  supplierOptionTextActive: {
+    color: theme.colors.white,
+    fontWeight: theme.fontWeight.semibold,
+  },
+  importError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.dangerLight || '#fee',
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  importErrorText: {
+    flex: 1,
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.danger,
+  },
+  uploadDocButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.accent,
+    padding: theme.spacing.lg,
+    borderRadius: theme.borderRadius.md,
+    gap: theme.spacing.sm,
+    width: '100%',
+    marginTop: theme.spacing.md,
+  },
+  uploadDocButtonDisabled: {
+    opacity: 0.5,
+  },
+  uploadDocButtonText: {
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.white,
+  },
+  importProcessingStep: {
+    alignItems: 'center',
+    padding: theme.spacing.xl,
+    paddingTop: theme.spacing.xxl || 48,
+  },
+  importReviewStep: {
+    padding: theme.spacing.md,
+  },
+  importItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  importItemCardSelected: {
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.backgroundLight,
+  },
+  importItemCheck: {
+    marginRight: theme.spacing.md,
+  },
+  importItemInfo: {
+    flex: 1,
+  },
+  importItemName: {
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  importItemDetails: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  },
+  importItemDetail: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
   },
 });

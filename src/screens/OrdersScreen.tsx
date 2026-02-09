@@ -194,7 +194,7 @@ export default function OrdersScreen() {
     }
 
     const supplier = state.suppliers.find((s) => s.id === order.supplier_id);
-    const subject = `Order ${order.order_number || order.id.substring(0, 8)} - Alfie's Food Co.`;
+    const subject = `Order ${order.order_number || order.id.substring(0, 8)}`;
     const body = buildOrderPlainText(order);
 
     await MailComposer.composeAsync({

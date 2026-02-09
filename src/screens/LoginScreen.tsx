@@ -59,13 +59,9 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.logoSection}>
-          <Image
-            source={require('../../assets/Alfies.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <Text style={styles.title}>Alfie's Food Co.</Text>
-          <Text style={styles.subtitle}>Ordering System</Text>
+          <Ionicons name="cart" size={80} color={theme.colors.accent} />
+          <Text style={styles.title}>Easy Ordering</Text>
+          <Text style={styles.subtitle}>Wholesale Ordering Made Simple</Text>
         </View>
 
         <View style={styles.formCard}>

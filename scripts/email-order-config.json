@@ -1,0 +1,9 @@
+{
+  "mailbox": "INBOX",
+  "processedFolder": "Processed Orders",
+  "senderFilter": "postmaster@mg.gapsolutions.com.au",
+  "subjectPatterns": [],
+  "supabaseUrl": "https://cijgmmckafmfmmlpvgyi.supabase.co",
+  "checkIntervalMinutes": 5,
+  "searchAllMailboxes": true
+}

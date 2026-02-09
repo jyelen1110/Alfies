@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
-import { Supplier, Item, Order, CartItem, Invoice, OrderStatus, User, OrderItem } from '../types';
+import { Supplier, Item, Order, CartItem, Invoice, OrderStatus, User, OrderItem, CustomerSupplier, Tenant } from '../types';
 import { createXeroInvoice, checkXeroConnection } from '../services/xero';
 
 interface OrderState {
@@ -11,6 +11,8 @@ interface OrderState {
   cart: CartItem[];
   invoices: Invoice[];
   users: User[];
+  customerSuppliers: CustomerSupplier[]; // Customer's connected suppliers/owners
+  connectedTenants: Tenant[]; // Tenant info for connected suppliers
   isLoading: boolean;
   error: string | null;
 }
@@ -24,12 +26,15 @@ type OrderAction =
   | { type: 'SET_CART'; payload: CartItem[] }
   | { type: 'SET_INVOICES'; payload: Invoice[] }
   | { type: 'SET_USERS'; payload: User[] }
+  | { type: 'SET_CUSTOMER_SUPPLIERS'; payload: CustomerSupplier[] }
+  | { type: 'SET_CONNECTED_TENANTS'; payload: Tenant[] }
   | { type: 'ADD_ORDER'; payload: Order }
   | { type: 'UPDATE_ORDER'; payload: Order }
   | { type: 'ADD_TO_CART'; payload: CartItem }
   | { type: 'UPDATE_CART_ITEM'; payload: { itemId: string; quantity: number } }
   | { type: 'REMOVE_FROM_CART'; payload: string }
   | { type: 'CLEAR_CART'; payload?: string }
+  | { type: 'CLEAR_CART_BY_TENANT'; payload: string }
   | { type: 'TOGGLE_FAVOURITE'; payload: string }
   | { type: 'UPDATE_ITEM'; payload: Item }
   | { type: 'ADD_ITEM'; payload: Item }
@@ -44,6 +49,8 @@ const initialState: OrderState = {
   cart: [],
   invoices: [],
   users: [],
+  customerSuppliers: [],
+  connectedTenants: [],
   isLoading: true,
   error: null,
 };
@@ -66,6 +73,10 @@ function orderReducer(state: OrderState, action: OrderAction): OrderState {
       return { ...state, invoices: action.payload };
     case 'SET_USERS':
       return { ...state, users: action.payload };
+    case 'SET_CUSTOMER_SUPPLIERS':
+      return { ...state, customerSuppliers: action.payload };
+    case 'SET_CONNECTED_TENANTS':
+      return { ...state, connectedTenants: action.payload };
     case 'ADD_ORDER':
       return { ...state, orders: [action.payload, ...state.orders] };
     case 'UPDATE_ORDER':
@@ -115,6 +126,11 @@ function orderReducer(state: OrderState, action: OrderAction): OrderState {
         };
       }
       return { ...state, cart: [] };
+    case 'CLEAR_CART_BY_TENANT':
+      return {
+        ...state,
+        cart: state.cart.filter((c) => c.item.tenant_id !== action.payload),
+      };
     case 'TOGGLE_FAVOURITE':
       return {
         ...state,
@@ -162,6 +178,7 @@ interface OrderContextType {
   updateCartQuantity: (itemId: string, quantity: number) => Promise<void>;
   removeFromCart: (itemId: string) => Promise<void>;
   clearCart: (supplierId?: string) => Promise<void>;
+  clearCartByTenant: (tenantId: string) => Promise<void>;
   // Item operations
   toggleFavourite: (itemId: string) => Promise<void>;
   updateItem: (item: Item) => Promise<void>;
@@ -180,9 +197,12 @@ interface OrderContextType {
   exportToXero: (invoiceId: string) => Promise<boolean>;
   // Utility
   getSupplierName: (supplierId: string) => string;
+  getTenantName: (tenantId: string) => string;
   getCartTotal: () => number;
   getCartQuantity: (itemId: string) => number;
   getPendingApprovalCount: () => number;
+  // Multi-supplier support
+  createOrderForTenant: (tenantId: string, order: Omit<Order, 'id' | 'tenant_id' | 'created_at'>) => Promise<Order | null>;
 }
 
 const OrderContext = createContext<OrderContextType | null>(null);
@@ -202,6 +222,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const loadAllData = async () => {
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
+      // For customers, first load their supplier relationships
+      if (user?.role === 'user') {
+        await loadCustomerSuppliers();
+      }
       await Promise.all([
         loadSuppliers(),
         loadItems(),
@@ -218,14 +242,52 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Load customer's connected supplier relationships
+  const loadCustomerSuppliers = async () => {
+    if (!user) return;
+
+    // Load customer_suppliers with tenant info
+    const { data: relationships, error } = await supabase
+      .from('customer_suppliers')
+      .select(`
+        *,
+        tenant:tenants(id, name, slug, settings)
+      `)
+      .eq('customer_id', user.id)
+      .eq('status', 'active');
+
+    if (error) {
+      console.error('Error loading customer suppliers:', error);
+      return;
+    }
+
+    const customerSuppliers = relationships || [];
+    dispatch({ type: 'SET_CUSTOMER_SUPPLIERS', payload: customerSuppliers });
+
+    // Extract connected tenants
+    const tenants = customerSuppliers
+      .map((cs: any) => cs.tenant)
+      .filter((t: Tenant | null): t is Tenant => t !== null);
+    dispatch({ type: 'SET_CONNECTED_TENANTS', payload: tenants });
+  };
+
   const loadSuppliers = async () => {
-    if (!tenant) return;
-    const { data, error } = await supabase
+    if (!tenant && !user) return;
+
+    let query = supabase
       .from('suppliers')
       .select('*')
-      .eq('tenant_id', tenant.id)
       .eq('status', 'active')
       .order('name');
+
+    // For owners/masters, filter by their tenant
+    // For customers, RLS handles visibility to connected suppliers
+    if (user?.role === 'owner' || user?.is_master) {
+      query = query.eq('tenant_id', tenant?.id);
+    }
+    // Customers: no tenant filter - RLS returns all connected suppliers
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error loading suppliers:', error);
@@ -235,7 +297,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   };
 
   const loadItems = async () => {
-    if (!tenant) return;
+    if (!tenant && !user) return;
     const PAGE_SIZE = 1000;
     let allItems: any[] = [];
     let page = 0;
@@ -245,13 +307,21 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       const from = page * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('items')
         .select('*')
-        .eq('tenant_id', tenant.id)
         .eq('status', 'active')
         .order('name')
         .range(from, to);
+
+      // For owners/masters, filter by their tenant
+      // For customers, RLS handles visibility to connected supplier items
+      if (user?.role === 'owner' || user?.is_master) {
+        query = query.eq('tenant_id', tenant?.id);
+      }
+      // Customers: no tenant filter - RLS returns items from all connected suppliers
+
+      const { data, error } = await query;
 
       if (error) {
         console.error('Error loading items:', error);
@@ -287,12 +357,22 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   };
 
   const loadCart = async () => {
-    if (!user || !tenant) return;
-    const { data, error } = await supabase
+    if (!user) return;
+
+    // For customers, load cart items from all connected suppliers
+    // For owners, load only their tenant's cart items
+    let query = supabase
       .from('cart_items')
       .select('*, item:items(*)')
-      .eq('user_id', user.id)
-      .eq('tenant_id', tenant.id);
+      .eq('user_id', user.id);
+
+    // For owners, filter by their tenant
+    if ((user.role === 'owner' || user.is_master) && tenant) {
+      query = query.eq('tenant_id', tenant.id);
+    }
+    // For customers, load all their cart items (from any tenant)
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error loading cart:', error);
@@ -334,7 +414,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
   // Cart operations
   const addToCart = async (item: Item, quantity: number) => {
-    if (!user || !tenant) return;
+    if (!user) return;
 
     const existingCartItem = state.cart.find((c) => c.item_id === item.id);
     if (existingCartItem) {
@@ -342,10 +422,15 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // For customers, use the item's tenant_id (the supplier's tenant)
+    // For owners, use their own tenant
+    const cartTenantId = user.role === 'user' ? item.tenant_id : tenant?.id;
+    if (!cartTenantId) return;
+
     const { data, error } = await supabase
       .from('cart_items')
       .insert({
-        tenant_id: tenant.id,
+        tenant_id: cartTenantId,
         user_id: user.id,
         item_id: item.id,
         quantity,
@@ -396,13 +481,17 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   };
 
   const clearCart = async (supplierId?: string) => {
-    if (!user || !tenant) return;
+    if (!user) return;
 
     let query = supabase
       .from('cart_items')
       .delete()
-      .eq('user_id', user.id)
-      .eq('tenant_id', tenant.id);
+      .eq('user_id', user.id);
+
+    // For owners, also filter by tenant
+    if ((user.role === 'owner' || user.is_master) && tenant) {
+      query = query.eq('tenant_id', tenant.id);
+    }
 
     if (supplierId) {
       const supplierItemIds = state.cart
@@ -418,6 +507,28 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       return;
     }
     dispatch({ type: 'CLEAR_CART', payload: supplierId });
+  };
+
+  // Clear cart items for a specific tenant (used by customers after placing order with a supplier)
+  const clearCartByTenant = async (tenantId: string) => {
+    if (!user) return;
+
+    const tenantItemIds = state.cart
+      .filter((c) => c.item.tenant_id === tenantId)
+      .map((c) => c.item_id);
+    if (tenantItemIds.length === 0) return;
+
+    const { error } = await supabase
+      .from('cart_items')
+      .delete()
+      .eq('user_id', user.id)
+      .in('item_id', tenantItemIds);
+
+    if (error) {
+      console.error('Error clearing cart by tenant:', error);
+      return;
+    }
+    dispatch({ type: 'CLEAR_CART_BY_TENANT', payload: tenantId });
   };
 
   // Item operations
@@ -456,6 +567,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         xero_item_code: item.xero_item_code,
         status: item.status,
         image_url: item.image_url,
+        image_path: item.image_path,
       })
       .eq('id', item.id);
 
@@ -489,6 +601,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         xero_item_code: item.xero_item_code,
         status: item.status || 'active',
         image_url: item.image_url,
+        image_path: item.image_path,
         is_favourite: false,
       })
       .select()
@@ -915,10 +1028,73 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
+  // Create order for a specific tenant (used by customers ordering from multiple suppliers)
+  const createOrderForTenant = async (
+    tenantId: string,
+    order: Omit<Order, 'id' | 'tenant_id' | 'created_at'>
+  ): Promise<Order | null> => {
+    if (!user) return null;
+
+    const { items, ...orderData } = order;
+
+    // Customer orders are pending approval
+    const status: OrderStatus = 'pending_approval';
+
+    const { data: newOrder, error: orderError } = await supabase
+      .from('orders')
+      .insert({
+        ...orderData,
+        tenant_id: tenantId, // Use the supplier's tenant
+        created_by: user.id,
+        status,
+      })
+      .select()
+      .single();
+
+    if (orderError) {
+      console.error('Error creating order for tenant:', orderError);
+      return null;
+    }
+
+    if (items && items.length > 0) {
+      const orderItems = items.map((item) => ({
+        order_id: newOrder.id,
+        tenant_id: tenantId,
+        name: item.name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total: item.quantity * item.unit_price,
+        xero_item_code: item.xero_item_code || null,
+        xero_account_code: item.xero_account_code || null,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems);
+
+      if (itemsError) {
+        console.error('Error creating order items:', itemsError);
+      }
+    }
+
+    const completeOrder = { ...newOrder, items: items || [] };
+    dispatch({ type: 'ADD_ORDER', payload: completeOrder });
+    return completeOrder;
+  };
+
   // Utility
   const getSupplierName = (supplierId: string): string => {
     const supplier = state.suppliers.find((s) => s.id === supplierId);
     return supplier?.name || 'Unknown Supplier';
+  };
+
+  const getTenantName = (tenantId: string): string => {
+    // First check connected tenants (for customers)
+    const connectedTenant = state.connectedTenants.find((t) => t.id === tenantId);
+    if (connectedTenant) return connectedTenant.name;
+    // Fall back to current tenant
+    if (tenant?.id === tenantId) return tenant.name;
+    return 'Unknown Supplier';
   };
 
   const getCartTotal = (): number => {
@@ -947,6 +1123,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         updateCartQuantity,
         removeFromCart,
         clearCart,
+        clearCartByTenant,
         toggleFavourite,
         updateItem,
         createItem,
@@ -961,9 +1138,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         approveOrderWithInvoice,
         exportToXero,
         getSupplierName,
+        getTenantName,
         getCartTotal,
         getCartQuantity,
         getPendingApprovalCount,
+        createOrderForTenant,
       }}
     >
       {children}
