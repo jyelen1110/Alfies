@@ -62,58 +62,11 @@ export async function connectGmail(tenantId: string): Promise<{ success: boolean
 
     // Open browser for OAuth
     if (Platform.OS === 'web') {
-      // For web, open in new window and listen for callback
-      const width = 500;
-      const height = 600;
-      const left = window.screenX + (window.outerWidth - width) / 2;
-      const top = window.screenY + (window.outerHeight - height) / 2;
-
-      const popup = window.open(
-        authUrl,
-        'gmail-oauth',
-        `width=${width},height=${height},left=${left},top=${top}`
-      );
-
-      return new Promise((resolve) => {
-        const handleMessage = async (event: MessageEvent) => {
-          if (event.data?.type === 'gmail-oauth-callback') {
-            window.removeEventListener('message', handleMessage);
-            popup?.close();
-
-            if (event.data.code) {
-              // Exchange code for tokens
-              const callbackResponse = await fetch(`${SUPABASE_URL}/functions/v1/gmail-callback`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  code: event.data.code,
-                  state: event.data.state,
-                }),
-              });
-
-              if (callbackResponse.ok) {
-                resolve({ success: true });
-              } else {
-                const error = await callbackResponse.json();
-                resolve({ success: false, error: error.error });
-              }
-            } else {
-              resolve({ success: false, error: 'Connection cancelled' });
-            }
-          }
-        };
-
-        window.addEventListener('message', handleMessage);
-
-        // Also check if popup was closed without completing
-        const checkClosed = setInterval(() => {
-          if (popup?.closed) {
-            clearInterval(checkClosed);
-            window.removeEventListener('message', handleMessage);
-            resolve({ success: false, error: 'Connection cancelled' });
-          }
-        }, 500);
-      });
+      // For web, redirect to Google OAuth
+      // After auth, Google redirects to /api/auth/gmail/callback
+      // which then redirects back to the app with success/error params
+      window.location.href = authUrl;
+      return { success: true }; // Will redirect, so this doesn't matter
     } else {
       // For native, use WebBrowser
       const result = await WebBrowser.openAuthSessionAsync(
@@ -123,22 +76,13 @@ export async function connectGmail(tenantId: string): Promise<{ success: boolean
 
       if (result.type === 'success' && result.url) {
         const url = new URL(result.url);
-        const code = url.searchParams.get('code');
-        const state = url.searchParams.get('state');
+        const gmailConnected = url.searchParams.get('gmail_connected');
+        const gmailError = url.searchParams.get('gmail_error');
 
-        if (code && state) {
-          const callbackResponse = await fetch(`${SUPABASE_URL}/functions/v1/gmail-callback`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code, state }),
-          });
-
-          if (callbackResponse.ok) {
-            return { success: true };
-          } else {
-            const error = await callbackResponse.json();
-            return { success: false, error: error.error };
-          }
+        if (gmailConnected === 'true') {
+          return { success: true };
+        } else if (gmailError) {
+          return { success: false, error: gmailError };
         }
       }
 

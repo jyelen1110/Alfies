@@ -6,7 +6,7 @@ const corsHeaders = {
 }
 
 const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_CLIENT_ID')
-const REDIRECT_URI = Deno.env.get('GOOGLE_REDIRECT_URI') || 'https://easy-ordering.vercel.app'
+const REDIRECT_URI = 'https://easy-ordering.vercel.app/api/auth/gmail/callback'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {

@@ -45,6 +45,29 @@ export default function SettingsScreen() {
   const [gmailFilterLabel, setGmailFilterLabel] = useState('INBOX');
   const [savingGmailFilters, setSavingGmailFilters] = useState(false);
 
+  // Check for Gmail OAuth callback params (web only)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const gmailConnected = params.get('gmail_connected');
+      const gmailError = params.get('gmail_error');
+      const email = params.get('email');
+
+      if (gmailConnected === 'true') {
+        Alert.alert('Success', `Gmail connected${email ? `: ${email}` : ''}! Orders will be processed automatically.`);
+        // Clear URL params
+        window.history.replaceState({}, '', window.location.pathname);
+        // Refresh Gmail status
+        if (tenant?.id) {
+          checkGmailStatus();
+        }
+      } else if (gmailError) {
+        Alert.alert('Error', `Failed to connect Gmail: ${gmailError}`);
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    }
+  }, []);
+
   // Check Xero and Gmail connection on mount
   useEffect(() => {
     if (tenant?.id) {
