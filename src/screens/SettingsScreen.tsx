@@ -17,6 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { useOrders } from '../context/OrderContext';
 import { supabase } from '../lib/supabase';
 import { checkXeroConnection, connectXero, disconnectXero } from '../services/xero';
+import { checkGmailConnection, connectGmail, disconnectGmail, GmailConnectionStatus } from '../services/gmail';
 import BusinessSwitcher from '../components/BusinessSwitcher';
 
 export default function SettingsScreen() {
@@ -34,10 +35,16 @@ export default function SettingsScreen() {
   const [xeroLoading, setXeroLoading] = useState(false);
   const [checkingXero, setCheckingXero] = useState(true);
 
-  // Check Xero connection on mount
+  // Gmail connection state
+  const [gmailStatus, setGmailStatus] = useState<GmailConnectionStatus>({ connected: false });
+  const [gmailLoading, setGmailLoading] = useState(false);
+  const [checkingGmail, setCheckingGmail] = useState(true);
+
+  // Check Xero and Gmail connection on mount
   useEffect(() => {
     if (tenant?.id) {
       checkXeroStatus();
+      checkGmailStatus();
     }
   }, [tenant?.id]);
 
@@ -52,6 +59,19 @@ export default function SettingsScreen() {
       console.error('Error checking Xero status:', error);
     } finally {
       setCheckingXero(false);
+    }
+  }, [tenant?.id]);
+
+  const checkGmailStatus = useCallback(async () => {
+    if (!tenant?.id) return;
+    setCheckingGmail(true);
+    try {
+      const status = await checkGmailConnection(tenant.id);
+      setGmailStatus(status);
+    } catch (error) {
+      console.error('Error checking Gmail status:', error);
+    } finally {
+      setCheckingGmail(false);
     }
   }, [tenant?.id]);
 
@@ -103,6 +123,60 @@ export default function SettingsScreen() {
               Alert.alert('Error', 'Failed to disconnect Xero');
             } finally {
               setXeroLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleConnectGmail = async () => {
+    if (!tenant?.id) return;
+    setGmailLoading(true);
+    try {
+      const result = await connectGmail(tenant.id);
+      if (result.success) {
+        setTimeout(async () => {
+          await checkGmailStatus();
+          setGmailLoading(false);
+          Alert.alert('Success', 'Gmail connected! Order emails will be processed automatically.');
+        }, 2000);
+      } else {
+        setGmailLoading(false);
+        if (result.error !== 'Connection cancelled') {
+          Alert.alert('Error', result.error || 'Failed to connect Gmail');
+        }
+      }
+    } catch (error) {
+      setGmailLoading(false);
+      Alert.alert('Error', 'Failed to connect Gmail');
+    }
+  };
+
+  const handleDisconnectGmail = () => {
+    Alert.alert(
+      'Disconnect Gmail',
+      'Are you sure you want to disconnect Gmail? Order emails will no longer be processed automatically.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            if (!tenant?.id) return;
+            setGmailLoading(true);
+            try {
+              const result = await disconnectGmail(tenant.id);
+              if (result.success) {
+                setGmailStatus({ connected: false });
+                Alert.alert('Success', 'Gmail disconnected');
+              } else {
+                Alert.alert('Error', result.error || 'Failed to disconnect Gmail');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Failed to disconnect Gmail');
+            } finally {
+              setGmailLoading(false);
             }
           },
         },
@@ -386,6 +460,83 @@ export default function SettingsScreen() {
           </View>
           <Text style={styles.integrationNote}>
             Connect Xero to automatically sync invoices when orders are approved.
+          </Text>
+
+          {/* Gmail Integration */}
+          <View style={styles.menuCard}>
+            {checkingGmail ? (
+              <View style={styles.menuItem}>
+                <View style={styles.menuItemLeft}>
+                  <ActivityIndicator size="small" color={theme.colors.accent} />
+                  <Text style={styles.menuItemValue}>Checking Gmail connection...</Text>
+                </View>
+              </View>
+            ) : gmailStatus.connected ? (
+              <>
+                <View style={styles.menuItem}>
+                  <View style={styles.menuItemLeft}>
+                    <View style={styles.gmailConnectedIcon}>
+                      <Ionicons name="mail" size={14} color={theme.colors.white} />
+                    </View>
+                    <View>
+                      <Text style={styles.menuItemLabel}>Gmail</Text>
+                      <Text style={[styles.menuItemValue, { color: theme.colors.success }]}>
+                        Connected
+                      </Text>
+                      {gmailStatus.email && (
+                        <Text style={styles.gmailEmail}>{gmailStatus.email}</Text>
+                      )}
+                      {gmailStatus.lastSyncAt && (
+                        <Text style={styles.xeroConnectedDate}>
+                          Last sync: {new Date(gmailStatus.lastSyncAt).toLocaleString()}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.menuDivider} />
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={handleDisconnectGmail}
+                  disabled={gmailLoading}
+                >
+                  <View style={styles.menuItemLeft}>
+                    {gmailLoading ? (
+                      <ActivityIndicator size="small" color={theme.colors.danger} />
+                    ) : (
+                      <Ionicons name="unlink-outline" size={20} color={theme.colors.danger} />
+                    )}
+                    <Text style={[styles.menuItemValue, { color: theme.colors.danger }]}>
+                      Disconnect Gmail
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={handleConnectGmail}
+                disabled={gmailLoading}
+              >
+                <View style={styles.menuItemLeft}>
+                  {gmailLoading ? (
+                    <ActivityIndicator size="small" color={theme.colors.info} />
+                  ) : (
+                    <Ionicons name="mail-outline" size={20} color={theme.colors.info} />
+                  )}
+                  <View>
+                    <Text style={styles.menuItemLabel}>Gmail</Text>
+                    <Text style={styles.menuItemValue}>
+                      {gmailLoading ? 'Connecting...' : 'Connect Gmail for automatic orders'}
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+          <Text style={styles.integrationNote}>
+            Connect Gmail to automatically create orders from supplier emails.
           </Text>
         </View>
       )}
@@ -752,7 +903,22 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.xs,
     color: theme.colors.textMuted,
     marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
     marginHorizontal: theme.spacing.xs,
     lineHeight: 18,
+  },
+  // Gmail styles
+  gmailConnectedIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#EA4335',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gmailEmail: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
+    marginTop: 2,
   },
 });
