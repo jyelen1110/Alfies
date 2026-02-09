@@ -24,6 +24,7 @@ import { useAuth } from '../context/AuthContext';
 import { Order, OrderItem, Item, User } from '../types';
 import { parseOrderCSV, ParsedOrderLine, ParsedCSVResult } from '../utils/csvParser';
 import { matchProduct, matchCustomer, ProductMatchResult, CustomerMatchResult, MatchConfidence } from '../utils/productMatcher';
+import { triggerGmailSync } from '../services/gmail';
 
 interface EditableOrderItem extends OrderItem {
   isDeleted?: boolean;
@@ -78,6 +79,7 @@ export default function ApprovalsScreen() {
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
   const [showItemPicker, setShowItemPicker] = useState<number | null>(null);
   const [itemPickerSearch, setItemPickerSearch] = useState('');
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
 
   const pendingOrders = useMemo(
     () => state.orders.filter((o) => o.status === 'pending_approval'),
@@ -458,6 +460,52 @@ export default function ApprovalsScreen() {
       setIsProcessing(false);
     }
   }, [selectedCustomer, manualOrderItems, state.suppliers, user, getManualOrderTotal, deliveryDate, createOrderForCustomer, closeManualOrderModal, loadAllData]);
+
+  // Check Email Handler
+  const showMessage = useCallback((title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  }, []);
+
+  const handleCheckEmail = useCallback(async () => {
+    console.log('=== handleCheckEmail START ===');
+    setIsCheckingEmail(true);
+    try {
+      console.log('Calling triggerGmailSync...');
+      const result = await triggerGmailSync();
+      console.log('triggerGmailSync returned:', result);
+      console.log('Gmail sync result:', JSON.stringify(result));
+
+      const successCount = result.results?.filter(r => r.success).length || 0;
+      const failCount = result.results?.filter(r => !r.success).length || 0;
+      const totalProcessed = result.processed || 0;
+
+      if (result.success) {
+        if (successCount > 0) {
+          showMessage('Orders Imported', `Successfully imported ${successCount} order(s)${failCount > 0 ? `\nFailed: ${failCount}` : ''}`);
+          loadAllData();
+        } else if (failCount > 0) {
+          const errors = result.results?.filter(r => !r.success).map(r => r.error).slice(0, 3).join('\n• ') || 'Unknown error';
+          showMessage('Import Failed', `Failed to import ${failCount} order(s):\n• ${errors}`);
+        } else if (totalProcessed === 0) {
+          showMessage('No New Emails', 'No new order emails found matching your filters.');
+        } else {
+          showMessage('Check Complete', `Processed ${totalProcessed} email(s) but no orders created.`);
+        }
+      } else {
+        showMessage('Email Check Failed', result.error || 'Unknown error. Check Gmail connection in Settings.');
+      }
+    } catch (error: any) {
+      console.error('Email check error:', error);
+      showMessage('Error', `Failed to check emails: ${error?.message || 'Unknown error'}`);
+    } finally {
+      console.log('Email check finished');
+      setIsCheckingEmail(false);
+    }
+  }, [loadAllData, showMessage]);
 
   // Import Handlers
   const openImportModal = useCallback(() => {
@@ -1702,11 +1750,25 @@ export default function ApprovalsScreen() {
           )}
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerButton} onPress={openManualOrderModal}>
-            <Ionicons name="add-circle-outline" size={22} color={theme.colors.accent} />
+          <TouchableOpacity style={styles.headerButtonText} onPress={openManualOrderModal}>
+            <Ionicons name="add-outline" size={18} color={theme.colors.accent} />
+            <Text style={styles.headerButtonLabel}>Add New</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerButton} onPress={openImportModal}>
-            <Ionicons name="document-attach-outline" size={22} color={theme.colors.accent} />
+          <TouchableOpacity
+            style={[styles.headerButtonText, isCheckingEmail && styles.headerButtonDisabled]}
+            onPress={handleCheckEmail}
+            disabled={isCheckingEmail}
+          >
+            {isCheckingEmail ? (
+              <ActivityIndicator size="small" color={theme.colors.accent} />
+            ) : (
+              <Ionicons name="mail-outline" size={18} color={theme.colors.accent} />
+            )}
+            <Text style={styles.headerButtonLabel}>Check Email</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButtonText} onPress={openImportModal}>
+            <Ionicons name="document-attach-outline" size={18} color={theme.colors.accent} />
+            <Text style={styles.headerButtonLabel}>Import CSV</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1783,6 +1845,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: theme.borderRadius.md,
     backgroundColor: theme.colors.surfaceHover,
+  },
+  headerButtonText: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surfaceHover,
+    gap: 4,
+  },
+  headerButtonLabel: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.accent,
+  },
+  headerButtonDisabled: {
+    opacity: 0.6,
   },
   countBadge: {
     backgroundColor: theme.colors.warning,

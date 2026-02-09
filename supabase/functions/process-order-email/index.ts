@@ -144,9 +144,12 @@ async function parseAttachmentWithClaude(
   }
 
   const aiResponse = await response.json()
+  console.log(`Claude response for ${attachment.filename}:`, JSON.stringify(aiResponse).substring(0, 500))
+
   const content = aiResponse.content?.[0]?.text
 
   if (!content) {
+    console.log(`No content in Claude response for ${attachment.filename}`)
     return { supplierName: '', items: [] }
   }
 
@@ -156,10 +159,16 @@ async function parseAttachmentWithClaude(
     jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
   }
 
-  const parsed = JSON.parse(jsonStr)
-  return {
-    supplierName: parsed.supplierName || '',
-    items: (parsed.items || []).filter((item: ParsedOrderItem) => item.name && item.quantity)
+  try {
+    const parsed = JSON.parse(jsonStr)
+    console.log(`Parsed ${parsed.items?.length || 0} items from ${attachment.filename}`)
+    return {
+      supplierName: parsed.supplierName || '',
+      items: (parsed.items || []).filter((item: ParsedOrderItem) => item.name && item.quantity)
+    }
+  } catch (parseError) {
+    console.error(`JSON parse error for ${attachment.filename}:`, parseError, 'Content:', jsonStr.substring(0, 200))
+    return { supplierName: '', items: [] }
   }
 }
 
@@ -262,13 +271,33 @@ serve(async (req) => {
       )
     }
 
-    // Parse all attachments and collect data
+    // Parse attachments - prioritize CSV (smallest), then XLSX, then PDF
     let supplierName = ''
     let allParsedItems: ParsedOrderItem[] = []
 
-    for (const attachment of attachments) {
+    // Sort attachments: CSV first, then XLSX, then PDF
+    const sortedAttachments = [...attachments].sort((a, b) => {
+      const order = (att: Attachment) => {
+        if (att.filename.toLowerCase().endsWith('.csv')) return 0
+        if (att.filename.toLowerCase().endsWith('.xlsx') || att.filename.toLowerCase().endsWith('.xls')) return 1
+        return 2
+      }
+      return order(a) - order(b)
+    })
+
+    console.log(`Processing ${sortedAttachments.length} attachments (prioritizing CSV)...`)
+
+    // Only parse until we get items (to avoid rate limits)
+    for (const attachment of sortedAttachments) {
+      if (allParsedItems.length > 0) {
+        console.log(`Already have ${allParsedItems.length} items, skipping ${attachment.filename}`)
+        break
+      }
+
+      console.log(`Parsing attachment: ${attachment.filename} (${attachment.contentType}, ${attachment.content?.length || 0} bytes)`)
       try {
         const parsed = await parseAttachmentWithClaude(attachment, anthropicKey)
+        console.log(`Parsed result: supplier="${parsed.supplierName}", items=${parsed.items.length}`)
         if (parsed.supplierName && !supplierName) {
           supplierName = parsed.supplierName
         }
@@ -277,6 +306,7 @@ serve(async (req) => {
         console.error(`Failed to parse ${attachment.filename}:`, err)
       }
     }
+    console.log(`Total parsed items: ${allParsedItems.length}`)
 
     if (allParsedItems.length === 0) {
       // Log failed import
@@ -325,6 +355,13 @@ serve(async (req) => {
     }
 
     // Match parsed items to existing inventory items
+    interface InventoryItem {
+      id: string;
+      name: string;
+      sku: string | null;
+      wholesale_price: number | null;
+    }
+
     const { data: inventoryItems, error: itemsError } = await supabase
       .from('items')
       .select('id, name, sku, wholesale_price')
@@ -336,6 +373,9 @@ serve(async (req) => {
       throw new Error(`Failed to fetch inventory: ${itemsError.message}`)
     }
 
+    const items: InventoryItem[] = inventoryItems || []
+    console.log(`Fetched ${items.length} inventory items for supplier ${supplier.name}`)
+
     const matchedItems: Array<{
       itemId: string;
       name: string;
@@ -345,11 +385,42 @@ serve(async (req) => {
     }> = []
     const unmatchedItems: string[] = []
 
+    // Helper function to normalize and extract significant words
+    const getSignificantWords = (text: string): string[] => {
+      const stopWords = ['and', 'the', 'a', 'an', 'of', 'for', 'with', 'in', 'on', 'to', 'by', 'per', 'each']
+      return text
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')  // Remove special chars
+        .split(/\s+/)
+        .filter(w => w.length > 2 && !stopWords.includes(w))
+    }
+
+    // Calculate word match score (percentage of words that match)
+    const calculateMatchScore = (words1: string[], words2: string[]): number => {
+      if (words1.length === 0 || words2.length === 0) return 0
+      let matches = 0
+      for (const w1 of words1) {
+        // Check if any word in words2 contains w1 or vice versa
+        if (words2.some(w2 => w1.includes(w2) || w2.includes(w1))) {
+          matches++
+        }
+      }
+      // Return percentage of words1 that matched
+      return matches / words1.length
+    }
+
+    console.log(`Total inventory items to match against: ${items.length || 0}`)
+
     for (const parsed of allParsedItems) {
       // Try to match by SKU/code first, then by name
-      const matchedItem = inventoryItems?.find(inv => {
-        const parsedCode = (parsed.code || parsed.sku || '').toLowerCase().trim()
-        const parsedName = parsed.name.toLowerCase().trim()
+      const parsedCode = (parsed.code || parsed.sku || '').toLowerCase().trim()
+      const parsedName = parsed.name.toLowerCase().trim()
+      const parsedWords = getSignificantWords(parsed.name)
+
+      console.log(`\nMatching: "${parsed.name}" (code: ${parsedCode})`)
+      console.log(`  Parsed words: [${parsedWords.join(', ')}]`)
+
+      let matchedItem = items.find(inv => {
         const invSku = (inv.sku || '').toLowerCase().trim()
         const invName = inv.name.toLowerCase().trim()
 
@@ -364,6 +435,32 @@ serve(async (req) => {
       })
 
       if (matchedItem) {
+        console.log(`  EXACT MATCH: "${matchedItem.name}" (${matchedItem.sku})`)
+      }
+
+      // If no exact match, try fuzzy word matching
+      if (!matchedItem && parsedWords.length > 0) {
+        let bestScore = 0
+        let bestMatch: InventoryItem | null = null
+
+        for (const inv of items || []) {
+          const invWords = getSignificantWords(inv.name)
+          const score = calculateMatchScore(parsedWords, invWords)
+          // Require at least 60% of words to match
+          if (score >= 0.6 && score > bestScore) {
+            bestScore = score
+            bestMatch = inv
+            console.log(`  Candidate: "${inv.name}" score=${score.toFixed(2)} words=[${invWords.join(', ')}]`)
+          }
+        }
+
+        if (bestMatch) {
+          console.log(`Fuzzy matched "${parsed.name}" -> "${bestMatch.name}" (score: ${bestScore.toFixed(2)})`)
+          matchedItem = bestMatch
+        }
+      }
+
+      if (matchedItem) {
         matchedItems.push({
           itemId: matchedItem.id,
           name: matchedItem.name,
@@ -376,8 +473,8 @@ serve(async (req) => {
       }
     }
 
-    // If there are unmatched items, fail the import
-    if (unmatchedItems.length > 0) {
+    // If no items matched at all, fail the import
+    if (matchedItems.length === 0) {
       await supabase.from('email_order_imports').insert({
         tenant_id: tenantId,
         message_id: messageId,
@@ -385,16 +482,16 @@ serve(async (req) => {
         subject,
         received_at: receivedDate,
         status: 'failed',
-        error_message: `Unmatched items: ${unmatchedItems.join(', ')}`,
+        error_message: `No items could be matched. Unmatched: ${unmatchedItems.join(', ')}`,
         raw_data: { supplierName, parsedItems: allParsedItems, unmatchedItems }
       })
 
       return new Response(
         JSON.stringify({
-          error: 'Some items could not be matched to inventory',
+          error: 'No items could be matched to inventory',
           supplier: supplier.name,
           unmatchedItems,
-          matchedCount: matchedItems.length
+          matchedCount: 0
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
@@ -402,8 +499,15 @@ serve(async (req) => {
 
     // Calculate totals
     const subtotal = matchedItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+    const hasUnmatchedItems = unmatchedItems.length > 0
 
-    // Create order with pending_approval status
+    // Build notes with unmatched items info
+    let orderNotes = `Imported from email: ${subject} (${sender})`
+    if (hasUnmatchedItems) {
+      orderNotes += `\n\n⚠️ UNMATCHED ITEMS (${unmatchedItems.length}):\n${unmatchedItems.map(item => `• ${item}`).join('\n')}`
+    }
+
+    // Create order - use 'pending_approval' status, but include unmatched info
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .insert({
@@ -413,7 +517,7 @@ serve(async (req) => {
         subtotal,
         total: subtotal,
         status: 'pending_approval',
-        notes: `Imported from email: ${subject} (${sender})`
+        notes: orderNotes
       })
       .select()
       .single()
@@ -444,7 +548,7 @@ serve(async (req) => {
       throw new Error(`Failed to create order items: ${orderItemsError.message}`)
     }
 
-    // Log successful import
+    // Log import (partial if there were unmatched items)
     await supabase.from('email_order_imports').insert({
       tenant_id: tenantId,
       message_id: messageId,
@@ -452,8 +556,9 @@ serve(async (req) => {
       subject,
       received_at: receivedDate,
       order_id: order.id,
-      status: 'success',
-      raw_data: { supplierName, parsedItems: allParsedItems, matchedItems }
+      status: hasUnmatchedItems ? 'partial' : 'success',
+      error_message: hasUnmatchedItems ? `Unmatched items: ${unmatchedItems.join(', ')}` : null,
+      raw_data: { supplierName, parsedItems: allParsedItems, matchedItems, unmatchedItems }
     })
 
     return new Response(
@@ -463,7 +568,10 @@ serve(async (req) => {
         orderNumber: order.order_number,
         supplier: supplier.name,
         itemCount: matchedItems.length,
-        total: subtotal
+        total: subtotal,
+        hasUnmatchedItems,
+        unmatchedItems: hasUnmatchedItems ? unmatchedItems : undefined,
+        unmatchedCount: unmatchedItems.length
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

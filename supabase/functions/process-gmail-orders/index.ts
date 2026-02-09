@@ -17,6 +17,7 @@ interface GmailConnection {
   refresh_token: string
   token_expiry: string
   filter_sender?: string
+  filter_to?: string
   filter_subject?: string
   filter_label?: string
 }
@@ -85,6 +86,10 @@ async function fetchEmails(accessToken: string, connection: GmailConnection): Pr
 
   if (connection.filter_sender) {
     queryParts.push(`from:${connection.filter_sender}`)
+  }
+
+  if (connection.filter_to) {
+    queryParts.push(`to:${connection.filter_to}`)
   }
 
   if (connection.filter_subject) {
@@ -235,7 +240,7 @@ serve(async (req) => {
     // Get all active Gmail connections
     const { data: connections, error: connError } = await supabase
       .from('gmail_connections')
-      .select('id, tenant_id, email, access_token, refresh_token, token_expiry, filter_sender, filter_subject, filter_label')
+      .select('id, tenant_id, email, access_token, refresh_token, token_expiry, filter_sender, filter_to, filter_subject, filter_label')
       .eq('is_active', true)
 
     if (connError) {
@@ -258,9 +263,17 @@ serve(async (req) => {
       }
 
       const messages = await fetchEmails(accessToken, connection)
-      console.log(`Found ${messages.length} messages for ${connection.email} (filters: sender=${connection.filter_sender || 'any'}, subject=${connection.filter_subject || 'any'}, label=${connection.filter_label || 'INBOX'})`)
+      console.log(`Found ${messages.length} messages for ${connection.email} (filters: from=${connection.filter_sender || 'any'}, to=${connection.filter_to || 'any'}, subject=${connection.filter_subject || 'any'}, label=${connection.filter_label || 'INBOX'})`)
 
+      let emailIndex = 0
       for (const message of messages) {
+        // Add delay between emails to avoid rate limits (except first one)
+        if (emailIndex > 0) {
+          console.log('Waiting 3 seconds before next email to avoid rate limits...')
+          await new Promise(resolve => setTimeout(resolve, 3000))
+        }
+        emailIndex++
+
         const messageId = message.id
         const headers = message.payload?.headers || []
         const subject = getHeader(headers, 'Subject')
@@ -289,11 +302,14 @@ serve(async (req) => {
           if (content) {
             // Gmail returns URL-safe base64, convert to standard
             const standardBase64 = content.replace(/-/g, '+').replace(/_/g, '/')
+            console.log(`Attachment: ${meta.filename} (${meta.mimeType}) - ${standardBase64.length} chars base64`)
             attachments.push({
               filename: meta.filename,
               contentType: meta.mimeType,
               content: standardBase64,
             })
+          } else {
+            console.log(`Failed to get content for: ${meta.filename}`)
           }
         }
 
@@ -317,15 +333,26 @@ serve(async (req) => {
         })
 
         const processResult = await processResponse.json()
+        console.log(`process-order-email response (${processResponse.status}):`, JSON.stringify(processResult))
 
         if (processResponse.ok && processResult.success) {
-          console.log(`SUCCESS: Order created for ${processResult.supplier}`)
+          const partialMsg = processResult.hasUnmatchedItems
+            ? ` (${processResult.unmatchedCount} unmatched items)`
+            : ''
+          console.log(`SUCCESS: Order created for ${processResult.supplier}${partialMsg}`)
           // Add label to mark as processed
           await addLabelToMessage(accessToken, messageId, 'Processed-Orders')
-          results.push({ messageId, success: true, orderId: processResult.orderId })
+          results.push({
+            messageId,
+            success: true,
+            orderId: processResult.orderId,
+            hasUnmatchedItems: processResult.hasUnmatchedItems,
+            unmatchedItems: processResult.unmatchedItems
+          })
         } else {
-          console.log(`FAILED: ${processResult.error}`)
-          results.push({ messageId, success: false, error: processResult.error })
+          const errorMsg = processResult.error || processResult.details || `HTTP ${processResponse.status}`
+          console.log(`FAILED: ${errorMsg}`)
+          results.push({ messageId, success: false, error: errorMsg })
         }
       }
 
