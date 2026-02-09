@@ -8,7 +8,6 @@ const corsHeaders = {
 
 const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_CLIENT_ID')
 const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')
-const SENDER_FILTER = 'postmaster@mg.gapsolutions.com.au'
 
 interface GmailConnection {
   id: string
@@ -17,6 +16,9 @@ interface GmailConnection {
   access_token: string
   refresh_token: string
   token_expiry: string
+  filter_sender?: string
+  filter_subject?: string
+  filter_label?: string
 }
 
 async function refreshAccessToken(connection: GmailConnection): Promise<string | null> {
@@ -73,11 +75,27 @@ async function getValidAccessToken(
   return connection.access_token
 }
 
-async function fetchEmails(accessToken: string): Promise<any[]> {
-  // Search for emails from the sender with attachments
-  const query = encodeURIComponent(`from:${SENDER_FILTER} has:attachment`)
+async function fetchEmails(accessToken: string, connection: GmailConnection): Promise<any[]> {
+  // Build query based on filters
+  const queryParts: string[] = ['has:attachment']
+
+  if (connection.filter_sender) {
+    queryParts.push(`from:${connection.filter_sender}`)
+  }
+
+  if (connection.filter_subject) {
+    queryParts.push(`subject:${connection.filter_subject}`)
+  }
+
+  if (connection.filter_label && connection.filter_label !== 'INBOX') {
+    queryParts.push(`label:${connection.filter_label}`)
+  }
+
+  const query = encodeURIComponent(queryParts.join(' '))
+  const labelParam = connection.filter_label ? `&labelIds=${connection.filter_label}` : ''
+
   const listResponse = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=10`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=10${labelParam}`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   )
 
@@ -214,7 +232,7 @@ serve(async (req) => {
     // Get all active Gmail connections
     const { data: connections, error: connError } = await supabase
       .from('gmail_connections')
-      .select('*')
+      .select('id, tenant_id, email, access_token, refresh_token, token_expiry, filter_sender, filter_subject, filter_label')
       .eq('is_active', true)
 
     if (connError) {
@@ -236,8 +254,8 @@ serve(async (req) => {
         continue
       }
 
-      const messages = await fetchEmails(accessToken)
-      console.log(`Found ${messages.length} messages for ${connection.email}`)
+      const messages = await fetchEmails(accessToken, connection)
+      console.log(`Found ${messages.length} messages for ${connection.email} (filters: sender=${connection.filter_sender || 'any'}, subject=${connection.filter_subject || 'any'}, label=${connection.filter_label || 'INBOX'})`)
 
       for (const message of messages) {
         const messageId = message.id

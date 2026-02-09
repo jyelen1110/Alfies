@@ -9,13 +9,16 @@ export interface GmailConnectionStatus {
   email?: string;
   lastSyncAt?: string;
   lastError?: string;
+  filterSender?: string;
+  filterSubject?: string;
+  filterLabel?: string;
 }
 
 export async function checkGmailConnection(tenantId: string): Promise<GmailConnectionStatus> {
   try {
     const { data, error } = await supabase
       .from('gmail_connections')
-      .select('email, last_sync_at, last_error, is_active')
+      .select('email, last_sync_at, last_error, is_active, filter_sender, filter_subject, filter_label')
       .eq('tenant_id', tenantId)
       .single();
 
@@ -28,6 +31,9 @@ export async function checkGmailConnection(tenantId: string): Promise<GmailConne
       email: data.email,
       lastSyncAt: data.last_sync_at,
       lastError: data.last_error,
+      filterSender: data.filter_sender,
+      filterSubject: data.filter_subject,
+      filterLabel: data.filter_label,
     };
   } catch (error) {
     console.error('Error checking Gmail connection:', error);
@@ -159,6 +165,54 @@ export async function disconnectGmail(tenantId: string): Promise<{ success: bool
   } catch (error) {
     console.error('Error disconnecting Gmail:', error);
     return { success: false, error: 'Failed to disconnect Gmail' };
+  }
+}
+
+export async function updateGmailFilters(
+  tenantId: string,
+  filters: { filterSender?: string; filterSubject?: string; filterLabel?: string }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('gmail_connections')
+      .update({
+        filter_sender: filters.filterSender || null,
+        filter_subject: filters.filterSubject || null,
+        filter_label: filters.filterLabel || 'INBOX',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('tenant_id', tenantId);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating Gmail filters:', error);
+    return { success: false, error: 'Failed to update filters' };
+  }
+}
+
+export async function getGmailLabels(tenantId: string): Promise<{ labels: string[]; error?: string }> {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/gmail-labels`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+      },
+      body: JSON.stringify({ tenantId }),
+    });
+
+    if (!response.ok) {
+      return { labels: [], error: 'Failed to fetch labels' };
+    }
+
+    const data = await response.json();
+    return { labels: data.labels || [] };
+  } catch (error) {
+    return { labels: [], error: 'Failed to fetch labels' };
   }
 }
 

@@ -17,7 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { useOrders } from '../context/OrderContext';
 import { supabase } from '../lib/supabase';
 import { checkXeroConnection, connectXero, disconnectXero } from '../services/xero';
-import { checkGmailConnection, connectGmail, disconnectGmail, GmailConnectionStatus } from '../services/gmail';
+import { checkGmailConnection, connectGmail, disconnectGmail, updateGmailFilters, GmailConnectionStatus } from '../services/gmail';
 import BusinessSwitcher from '../components/BusinessSwitcher';
 
 export default function SettingsScreen() {
@@ -39,6 +39,11 @@ export default function SettingsScreen() {
   const [gmailStatus, setGmailStatus] = useState<GmailConnectionStatus>({ connected: false });
   const [gmailLoading, setGmailLoading] = useState(false);
   const [checkingGmail, setCheckingGmail] = useState(true);
+  const [showGmailFilterModal, setShowGmailFilterModal] = useState(false);
+  const [gmailFilterSender, setGmailFilterSender] = useState('');
+  const [gmailFilterSubject, setGmailFilterSubject] = useState('');
+  const [gmailFilterLabel, setGmailFilterLabel] = useState('INBOX');
+  const [savingGmailFilters, setSavingGmailFilters] = useState(false);
 
   // Check Xero and Gmail connection on mount
   useEffect(() => {
@@ -150,6 +155,36 @@ export default function SettingsScreen() {
     } catch (error) {
       setGmailLoading(false);
       Alert.alert('Error', 'Failed to connect Gmail');
+    }
+  };
+
+  const handleOpenGmailFilters = () => {
+    setGmailFilterSender(gmailStatus.filterSender || '');
+    setGmailFilterSubject(gmailStatus.filterSubject || '');
+    setGmailFilterLabel(gmailStatus.filterLabel || 'INBOX');
+    setShowGmailFilterModal(true);
+  };
+
+  const handleSaveGmailFilters = async () => {
+    if (!tenant?.id) return;
+    setSavingGmailFilters(true);
+    try {
+      const result = await updateGmailFilters(tenant.id, {
+        filterSender: gmailFilterSender.trim() || undefined,
+        filterSubject: gmailFilterSubject.trim() || undefined,
+        filterLabel: gmailFilterLabel.trim() || 'INBOX',
+      });
+      if (result.success) {
+        await checkGmailStatus();
+        setShowGmailFilterModal(false);
+        Alert.alert('Success', 'Email filters updated');
+      } else {
+        Alert.alert('Error', result.error || 'Failed to save filters');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save filters');
+    } finally {
+      setSavingGmailFilters(false);
     }
   };
 
@@ -478,7 +513,7 @@ export default function SettingsScreen() {
                     <View style={styles.gmailConnectedIcon}>
                       <Ionicons name="mail" size={14} color={theme.colors.white} />
                     </View>
-                    <View>
+                    <View style={{ flex: 1 }}>
                       <Text style={styles.menuItemLabel}>Gmail</Text>
                       <Text style={[styles.menuItemValue, { color: theme.colors.success }]}>
                         Connected
@@ -494,6 +529,24 @@ export default function SettingsScreen() {
                     </View>
                   </View>
                 </View>
+                <View style={styles.menuDivider} />
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={handleOpenGmailFilters}
+                >
+                  <View style={styles.menuItemLeft}>
+                    <Ionicons name="filter-outline" size={20} color={theme.colors.info} />
+                    <View>
+                      <Text style={styles.menuItemLabel}>Email Filters</Text>
+                      <Text style={styles.menuItemValue}>
+                        {gmailStatus.filterSender || gmailStatus.filterSubject
+                          ? `${gmailStatus.filterSender || 'Any sender'}${gmailStatus.filterSubject ? `, "${gmailStatus.filterSubject}"` : ''}`
+                          : 'Configure which emails to process'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+                </TouchableOpacity>
                 <View style={styles.menuDivider} />
                 <TouchableOpacity
                   style={styles.menuItem}
@@ -616,6 +669,80 @@ export default function SettingsScreen() {
                   <>
                     <Ionicons name="paper-plane" size={18} color={theme.colors.white} />
                     <Text style={styles.inviteButtonText}>Send Invitation</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Gmail Filter Modal */}
+      <Modal visible={showGmailFilterModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Email Filters</Text>
+              <TouchableOpacity onPress={() => setShowGmailFilterModal(false)}>
+                <Ionicons name="close" size={24} color={theme.colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <Text style={styles.inputLabel}>From (Sender Email)</Text>
+              <TextInput
+                style={styles.textInput}
+                value={gmailFilterSender}
+                onChangeText={setGmailFilterSender}
+                placeholder="e.g. orders@supplier.com"
+                placeholderTextColor={theme.colors.textMuted}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Text style={styles.filterHint}>Only process emails from this sender</Text>
+
+              <Text style={styles.inputLabel}>Subject Contains</Text>
+              <TextInput
+                style={styles.textInput}
+                value={gmailFilterSubject}
+                onChangeText={setGmailFilterSubject}
+                placeholder="e.g. Order, PO, Purchase"
+                placeholderTextColor={theme.colors.textMuted}
+                autoCapitalize="none"
+              />
+              <Text style={styles.filterHint}>Only process emails with this text in subject</Text>
+
+              <Text style={styles.inputLabel}>Gmail Label/Folder</Text>
+              <TextInput
+                style={styles.textInput}
+                value={gmailFilterLabel}
+                onChangeText={setGmailFilterLabel}
+                placeholder="INBOX"
+                placeholderTextColor={theme.colors.textMuted}
+                autoCapitalize="none"
+              />
+              <Text style={styles.filterHint}>Gmail label to search (e.g. INBOX, Orders)</Text>
+            </View>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowGmailFilterModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.inviteButton, savingGmailFilters && styles.inviteButtonDisabled]}
+                onPress={handleSaveGmailFilters}
+                disabled={savingGmailFilters}
+              >
+                {savingGmailFilters ? (
+                  <ActivityIndicator size="small" color={theme.colors.white} />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={18} color={theme.colors.white} />
+                    <Text style={styles.inviteButtonText}>Save Filters</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -920,5 +1047,11 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.xs,
     color: theme.colors.textSecondary,
     marginTop: 2,
+  },
+  filterHint: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+    marginTop: 4,
+    marginBottom: theme.spacing.sm,
   },
 });
