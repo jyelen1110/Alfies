@@ -77,7 +77,11 @@ async function getValidAccessToken(
 
 async function fetchEmails(accessToken: string, connection: GmailConnection): Promise<any[]> {
   // Build query based on filters
-  const queryParts: string[] = ['has:attachment']
+  // Note: Gmail API returns both read and unread emails by default
+  const queryParts: string[] = [
+    'has:attachment',
+    '-label:Processed-Orders'  // Exclude already processed emails
+  ]
 
   if (connection.filter_sender) {
     queryParts.push(`from:${connection.filter_sender}`)
@@ -92,10 +96,9 @@ async function fetchEmails(accessToken: string, connection: GmailConnection): Pr
   }
 
   const query = encodeURIComponent(queryParts.join(' '))
-  const labelParam = connection.filter_label ? `&labelIds=${connection.filter_label}` : ''
 
   const listResponse = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=10${labelParam}`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=20`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   )
 
@@ -318,7 +321,7 @@ serve(async (req) => {
         if (processResponse.ok && processResult.success) {
           console.log(`SUCCESS: Order created for ${processResult.supplier}`)
           // Add label to mark as processed
-          await addLabelToMessage(accessToken, messageId, 'Processed Orders')
+          await addLabelToMessage(accessToken, messageId, 'Processed-Orders')
           results.push({ messageId, success: true, orderId: processResult.orderId })
         } else {
           console.log(`FAILED: ${processResult.error}`)

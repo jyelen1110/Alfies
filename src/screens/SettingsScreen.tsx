@@ -516,11 +516,8 @@ export default function SettingsScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.menuItemLabel}>Gmail</Text>
                       <Text style={[styles.menuItemValue, { color: theme.colors.success }]}>
-                        Connected
+                        Connected - {gmailStatus.email}
                       </Text>
-                      {gmailStatus.email && (
-                        <Text style={styles.gmailEmail}>{gmailStatus.email}</Text>
-                      )}
                       {gmailStatus.lastSyncAt && (
                         <Text style={styles.xeroConnectedDate}>
                           Last sync: {new Date(gmailStatus.lastSyncAt).toLocaleString()}
@@ -529,24 +526,39 @@ export default function SettingsScreen() {
                     </View>
                   </View>
                 </View>
-                <View style={styles.menuDivider} />
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={handleOpenGmailFilters}
-                >
-                  <View style={styles.menuItemLeft}>
-                    <Ionicons name="filter-outline" size={20} color={theme.colors.info} />
-                    <View>
-                      <Text style={styles.menuItemLabel}>Email Filters</Text>
-                      <Text style={styles.menuItemValue}>
-                        {gmailStatus.filterSender || gmailStatus.filterSubject
-                          ? `${gmailStatus.filterSender || 'Any sender'}${gmailStatus.filterSubject ? `, "${gmailStatus.filterSubject}"` : ''}`
-                          : 'Configure which emails to process'}
+
+                {/* Filter Settings Button */}
+                <View style={styles.gmailFilterSection}>
+                  <Text style={styles.gmailFilterTitle}>Email Filters</Text>
+                  <View style={styles.gmailFilterInfo}>
+                    <View style={styles.gmailFilterRow}>
+                      <Text style={styles.gmailFilterLabel}>From:</Text>
+                      <Text style={styles.gmailFilterValue}>
+                        {gmailStatus.filterSender || 'Any sender'}
+                      </Text>
+                    </View>
+                    <View style={styles.gmailFilterRow}>
+                      <Text style={styles.gmailFilterLabel}>Subject:</Text>
+                      <Text style={styles.gmailFilterValue}>
+                        {gmailStatus.filterSubject || 'Any subject'}
+                      </Text>
+                    </View>
+                    <View style={styles.gmailFilterRow}>
+                      <Text style={styles.gmailFilterLabel}>Folder:</Text>
+                      <Text style={styles.gmailFilterValue}>
+                        {gmailStatus.filterLabel || 'INBOX'}
                       </Text>
                     </View>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.gmailFilterButton}
+                    onPress={handleOpenGmailFilters}
+                  >
+                    <Ionicons name="settings-outline" size={16} color={theme.colors.white} />
+                    <Text style={styles.gmailFilterButtonText}>Configure Filters</Text>
+                  </TouchableOpacity>
+                </View>
+
                 <View style={styles.menuDivider} />
                 <TouchableOpacity
                   style={styles.menuItem}
@@ -1053,5 +1065,50 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     marginTop: 4,
     marginBottom: theme.spacing.sm,
+  },
+  gmailFilterSection: {
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.background,
+    marginHorizontal: theme.spacing.sm,
+    marginVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
+  },
+  gmailFilterTitle: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.sm,
+  },
+  gmailFilterInfo: {
+    marginBottom: theme.spacing.md,
+  },
+  gmailFilterRow: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  gmailFilterLabel: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textMuted,
+    width: 60,
+  },
+  gmailFilterValue: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.text,
+    flex: 1,
+  },
+  gmailFilterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.info,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    gap: theme.spacing.xs,
+  },
+  gmailFilterButtonText: {
+    color: theme.colors.white,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
   },
 });
