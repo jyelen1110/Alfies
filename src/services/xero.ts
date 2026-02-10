@@ -150,14 +150,28 @@ export async function createXeroInvoice(
   invoiceId: string
 ): Promise<XeroInvoiceResponse> {
   try {
-    const { data, error } = await supabase.functions.invoke('xero-create-invoice', {
+    // Use fetch directly to get better error handling
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/xero-create-invoice`, {
       method: 'POST',
-      body: { order_id: orderId, invoice_id: invoiceId },
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ order_id: orderId, invoice_id: invoiceId }),
     });
 
-    if (error) {
-      console.error('Xero create invoice error:', error);
-      return { success: false, error: error.message || 'Failed to create Xero invoice' };
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('Xero create invoice error:', data);
+      // Return the actual error message from the edge function
+      return { success: false, error: data.error || 'Failed to create Xero invoice' };
     }
 
     if (data?.code === 'XERO_NOT_CONNECTED') {
