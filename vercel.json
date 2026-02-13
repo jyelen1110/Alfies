@@ -5,11 +5,5 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/" }
-  ],
-  "crons": [
-    {
-      "path": "/api/cron/process-emails",
-      "schedule": "*/5 * * * *"
-    }
   ]
 }

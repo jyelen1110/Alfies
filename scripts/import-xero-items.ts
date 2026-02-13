@@ -20,6 +20,7 @@ interface XeroItem {
   itemName: string;
   salesDescription: string;
   salesUnitPrice: number;
+  salesAccountCode: string;
   status: string;
 }
 
@@ -61,6 +62,7 @@ async function main() {
     const itemName = values[1];
     const salesDescription = values[3];
     const salesUnitPrice = parseFloat(values[4]) || 0;
+    const salesAccountCode = values[5] || '';
     const status = values[7];
 
     if (!itemCode || !status) continue;
@@ -70,6 +72,7 @@ async function main() {
       itemName,
       salesDescription,
       salesUnitPrice,
+      salesAccountCode,
       status
     });
   }
@@ -135,6 +138,7 @@ async function main() {
         .update({
           name,
           xero_item_code: sku,  // Store ItemCode as xero_item_code
+          xero_account_code: item.salesAccountCode || null,  // Store SalesAccount as xero_account_code
           wholesale_price: item.salesUnitPrice,
           status: 'active'
         })
@@ -156,6 +160,7 @@ async function main() {
           name,
           sku,
           xero_item_code: sku,  // Store ItemCode as xero_item_code
+          xero_account_code: item.salesAccountCode || null,  // Store SalesAccount as xero_account_code
           wholesale_price: item.salesUnitPrice,
           status: 'active'
         });

@@ -18,6 +18,7 @@ import { useOrders } from '../context/OrderContext';
 import { useAuth } from '../context/AuthContext';
 import { theme } from '../theme';
 import { Order, OrderStatus } from '../types';
+import ItemMatchingModal, { parseUnmatchedItems } from '../components/ItemMatchingModal';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -104,8 +105,8 @@ function StatusBadge({ status }: { status: OrderStatus }) {
 // ---------------------------------------------------------------------------
 
 export default function OrdersScreen() {
-  const { state, updateOrderStatus, deleteOrder, getSupplierName, generateInvoice } = useOrders();
-  const { user, isOwner } = useAuth();
+  const { state, updateOrderStatus, deleteOrder, getSupplierName, generateInvoice, loadAllData } = useOrders();
+  const { user, isOwner, tenant } = useAuth();
 
   const [selectedSupplier, setSelectedSupplier] = useState<string>('all');
   const [dateRange, setDateRange] = useState<DateRange>('all');
@@ -113,6 +114,7 @@ export default function OrdersScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [supplierPickerOpen, setSupplierPickerOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [showMatchingModal, setShowMatchingModal] = useState(false);
 
   // -- Filtered orders -------------------------------------------------------
 
@@ -149,7 +151,16 @@ export default function OrdersScreen() {
 
   const handleOpenDetail = (order: Order) => {
     setSelectedOrder(order);
-    setModalVisible(true);
+    // If order has unmatched items, show matching modal instead of detail modal
+    const hasUnmatched = order.notes && (
+      order.notes.toUpperCase().includes('UNMATCHED') ||
+      order.notes.includes('⚠️')
+    );
+    if (hasUnmatched) {
+      setShowMatchingModal(true);
+    } else {
+      setModalVisible(true);
+    }
   };
 
   const handleCloseDetail = () => {
@@ -487,6 +498,7 @@ export default function OrdersScreen() {
                   <Text style={[styles.detailValue, { flex: 1 }]}>{order.notes}</Text>
                 </View>
               ) : null}
+
             </View>
 
             {/* Items list */}
@@ -650,6 +662,24 @@ export default function OrdersScreen() {
 
       {renderSupplierPicker()}
       {renderDetailModal()}
+
+      {/* Item Matching Modal */}
+      {selectedOrder && tenant && (
+        <ItemMatchingModal
+          visible={showMatchingModal}
+          order={selectedOrder}
+          items={state.items}
+          tenantId={tenant.id}
+          onClose={() => setShowMatchingModal(false)}
+          onItemsMatched={() => {
+            // Reload data to get updated order
+            loadAllData();
+            setShowMatchingModal(false);
+            setModalVisible(false);
+            setSelectedOrder(null);
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -902,6 +932,22 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.borderLight,
+  },
+  matchItemsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.warning,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    borderRadius: theme.borderRadius.md,
+    marginTop: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  matchItemsButtonText: {
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.white,
   },
   detailLabel: {
     fontSize: theme.fontSize.sm,

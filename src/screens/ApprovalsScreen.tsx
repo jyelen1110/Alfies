@@ -25,6 +25,7 @@ import { Order, OrderItem, Item, User } from '../types';
 import { parseOrderCSV, ParsedOrderLine, ParsedCSVResult } from '../utils/csvParser';
 import { matchProduct, matchCustomer, ProductMatchResult, CustomerMatchResult, MatchConfidence } from '../utils/productMatcher';
 import { triggerGmailSync } from '../services/gmail';
+import ItemMatchingModal from '../components/ItemMatchingModal';
 
 interface EditableOrderItem extends OrderItem {
   isDeleted?: boolean;
@@ -44,7 +45,7 @@ interface ImportMatchedItem {
 
 export default function ApprovalsScreen() {
   const { state, updateOrderStatus, getSupplierName, loadAllData, approveOrderWithInvoice, updateOrder, updateOrderItems, createOrderForCustomer, createItem } = useOrders();
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
 
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
@@ -80,6 +81,7 @@ export default function ApprovalsScreen() {
   const [showItemPicker, setShowItemPicker] = useState<number | null>(null);
   const [itemPickerSearch, setItemPickerSearch] = useState('');
   const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+  const [showMatchingModal, setShowMatchingModal] = useState(false);
 
   const pendingOrders = useMemo(
     () => state.orders.filter((o) => o.status === 'pending_approval'),
@@ -96,7 +98,16 @@ export default function ApprovalsScreen() {
 
   const openDetail = useCallback((order: Order) => {
     setSelectedOrder(order);
-    setDetailModalVisible(true);
+    // Check if order has unmatched items - show matching modal first
+    const hasUnmatched = order.notes && (
+      order.notes.toUpperCase().includes('UNMATCHED') ||
+      order.notes.includes('⚠️')
+    );
+    if (hasUnmatched) {
+      setShowMatchingModal(true);
+    } else {
+      setDetailModalVisible(true);
+    }
   }, []);
 
   const closeDetail = useCallback(() => {
@@ -233,70 +244,78 @@ export default function ApprovalsScreen() {
     }
   }, [selectedOrder, editingItems, editingNotes, updateOrderItems, updateOrder, calculateEditTotal, closeEditModal, loadAllData]);
 
+  // Cross-platform alert helpers (must be defined before handleReject)
+  const showMessage = useCallback((title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  }, []);
+
+  const showConfirm = useCallback((title: string, message: string, onConfirm: () => void) => {
+    if (Platform.OS === 'web') {
+      if (window.confirm(`${title}\n\n${message}`)) {
+        onConfirm();
+      }
+    } else {
+      Alert.alert(title, message, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', style: 'destructive', onPress: onConfirm },
+      ]);
+    }
+  }, []);
+
   const handleApprove = useCallback(
     (order: Order) => {
-      Alert.alert(
+      showConfirm(
         'Approve Order',
         `Approve order ${order.order_number || order.id.substring(0, 8)}? This will generate an invoice.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Approve & Generate Invoice',
-            style: 'default',
-            onPress: async () => {
-              setIsProcessing(true);
-              try {
-                const result = await approveOrderWithInvoice(order.id, user?.id || '');
-                if (result) {
-                  Alert.alert(
-                    'Order Approved',
-                    `Order approved and invoice ${result.invoice?.invoice_number || ''} has been generated.`
-                  );
-                }
-                closeDetail();
-                closeEditModal();
-              } catch (error) {
-                console.error('Error approving order:', error);
-                Alert.alert('Error', 'Failed to approve order. Please try again.');
-              } finally {
-                setIsProcessing(false);
-              }
-            },
-          },
-        ]
+        async () => {
+          setIsProcessing(true);
+          try {
+            const result = await approveOrderWithInvoice(order.id, user?.id || '');
+            if (result) {
+              showMessage(
+                'Order Approved',
+                `Order approved and invoice ${result.invoice?.invoice_number || ''} has been generated.`
+              );
+            }
+            closeDetail();
+            closeEditModal();
+          } catch (error: any) {
+            console.error('Error approving order:', error);
+            showMessage('Error', error?.message || 'Failed to approve order. Please try again.');
+          } finally {
+            setIsProcessing(false);
+          }
+        }
       );
     },
-    [approveOrderWithInvoice, user?.id, closeDetail, closeEditModal]
+    [approveOrderWithInvoice, user?.id, closeDetail, closeEditModal, showConfirm, showMessage]
   );
 
   const handleReject = useCallback(
     (order: Order) => {
-      Alert.alert(
+      showConfirm(
         'Cancel Order',
         `Are you sure you want to cancel order ${order.order_number || order.id.substring(0, 8)}?`,
-        [
-          { text: 'Keep Order', style: 'cancel' },
-          {
-            text: 'Cancel Order',
-            style: 'destructive',
-            onPress: async () => {
-              setIsProcessing(true);
-              try {
-                await updateOrderStatus(order.id, 'cancelled');
-                closeDetail();
-                closeEditModal();
-              } catch (error) {
-                console.error('Error cancelling order:', error);
-                Alert.alert('Error', 'Failed to cancel order. Please try again.');
-              } finally {
-                setIsProcessing(false);
-              }
-            },
-          },
-        ]
+        async () => {
+          setIsProcessing(true);
+          try {
+            await updateOrderStatus(order.id, 'cancelled');
+            closeDetail();
+            closeEditModal();
+          } catch (error) {
+            console.error('Error cancelling order:', error);
+            showMessage('Error', 'Failed to cancel order. Please try again.');
+          } finally {
+            setIsProcessing(false);
+          }
+        }
       );
     },
-    [updateOrderStatus, closeDetail, closeEditModal]
+    [updateOrderStatus, closeDetail, closeEditModal, showConfirm, showMessage]
   );
 
   const formatDate = (dateString: string): string => {
@@ -460,15 +479,6 @@ export default function ApprovalsScreen() {
       setIsProcessing(false);
     }
   }, [selectedCustomer, manualOrderItems, state.suppliers, user, getManualOrderTotal, deliveryDate, createOrderForCustomer, closeManualOrderModal, loadAllData]);
-
-  // Check Email Handler
-  const showMessage = useCallback((title: string, message: string) => {
-    if (Platform.OS === 'web') {
-      window.alert(`${title}\n\n${message}`);
-    } else {
-      Alert.alert(title, message);
-    }
-  }, []);
 
   const handleCheckEmail = useCallback(async () => {
     console.log('=== handleCheckEmail START ===');
@@ -710,7 +720,8 @@ export default function ApprovalsScreen() {
   };
 
   const renderOrderCard = ({ item: order }: { item: Order }) => {
-    const customerName = getCustomerName(order.created_by);
+    // Use customer_id if set (for email-imported orders), otherwise fall back to created_by
+    const customerName = getCustomerName(order.customer_id || order.created_by);
     const itemCount = order.items?.length || 0;
 
     return (
@@ -763,7 +774,7 @@ export default function ApprovalsScreen() {
       <View style={styles.emptyIconContainer}>
         <Ionicons name="checkmark-circle-outline" size={64} color={theme.colors.borderLight} />
       </View>
-      <Text style={styles.emptyTitle}>No Pending Approvals</Text>
+      <Text style={styles.emptyTitle}>No Pending Orders</Text>
       <Text style={styles.emptySubtitle}>
         All orders have been reviewed. New orders from team members will appear here.
       </Text>
@@ -813,10 +824,10 @@ export default function ApprovalsScreen() {
                 <Text style={styles.detailLabel}>Supplier</Text>
                 <Text style={styles.detailValue}>{supplierName}</Text>
               </View>
-              {selectedOrder.created_by && (
+              {(selectedOrder.customer_id || selectedOrder.created_by) && (
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Created By</Text>
-                  <Text style={styles.detailValue}>{selectedOrder.created_by}</Text>
+                  <Text style={styles.detailLabel}>Customer</Text>
+                  <Text style={styles.detailValue}>{getCustomerName(selectedOrder.customer_id || selectedOrder.created_by)}</Text>
                 </View>
               )}
               {selectedOrder.requested_delivery_date && (
@@ -1742,7 +1753,7 @@ export default function ApprovalsScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Approvals</Text>
+          <Text style={styles.headerTitle}>Orders</Text>
           {pendingCount > 0 && (
             <View style={styles.countBadge}>
               <Text style={styles.countBadgeText}>{pendingCount}</Text>
@@ -1804,6 +1815,26 @@ export default function ApprovalsScreen() {
       {renderEditModal()}
       {renderManualOrderModal()}
       {renderImportModal()}
+
+      {/* Item Matching Modal for unmatched items */}
+      {selectedOrder && tenant && (
+        <ItemMatchingModal
+          visible={showMatchingModal}
+          order={selectedOrder}
+          items={state.items}
+          tenantId={tenant.id}
+          onClose={() => {
+            setShowMatchingModal(false);
+            // Open detail modal after closing matching modal
+            setDetailModalVisible(true);
+          }}
+          onItemsMatched={() => {
+            loadAllData();
+            setShowMatchingModal(false);
+            setSelectedOrder(null);
+          }}
+        />
+      )}
     </View>
   );
 }

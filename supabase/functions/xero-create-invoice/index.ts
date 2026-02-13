@@ -132,6 +132,19 @@ serve(async (req) => {
     }
     console.log('Order found:', order.order_number || order.id);
     console.log('Order items count:', order.items?.length || 0);
+    console.log('Order customer_id:', order.customer_id || 'not set');
+
+    // Check for customer linked to order
+    if (!order.customer_id) {
+      console.error('ERROR: Order has no customer linked');
+      return new Response(JSON.stringify({
+        error: 'Cannot export to Xero without a customer linked to this order.',
+        code: 'NO_CUSTOMER_LINKED'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Get invoice
     console.log('Fetching invoice...');
@@ -151,27 +164,81 @@ serve(async (req) => {
     }
     console.log('Invoice found:', invoice.invoice_number);
 
-    // Get customer info (the user who placed the order)
-    console.log('Fetching customer info for created_by:', order.created_by);
+    // Get customer info from customer_id (the customer this order is FOR)
+    console.log('Fetching customer info for customer_id:', order.customer_id);
     let customerName = 'Customer';
     let customerEmail = '';
     let xeroContactId: string | null = null;
 
-    if (order.created_by) {
-      const { data: customer } = await supabaseAdmin
-        .from('users')
-        .select('business_name, full_name, contact_email, email, xero_contact_id')
-        .eq('id', order.created_by)
-        .single();
+    const { data: customer } = await supabaseAdmin
+      .from('users')
+      .select('business_name, full_name, contact_email, email, xero_contact_id, customer_id')
+      .eq('id', order.customer_id)
+      .single();
 
-      if (customer) {
-        customerName = customer.business_name || customer.full_name || 'Customer';
-        customerEmail = customer.contact_email || customer.email || '';
-        xeroContactId = customer.xero_contact_id || null;
-        console.log('Customer found:', customerName, customerEmail, 'Xero Contact ID:', xeroContactId || 'none');
-      } else {
-        console.log('No customer found, using default');
+    if (!customer) {
+      console.error('ERROR: Customer not found for order.customer_id:', order.customer_id);
+      return new Response(JSON.stringify({
+        error: 'Customer not found.',
+        code: 'CUSTOMER_NOT_FOUND'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Check if customer has a Customer ID (required for Xero)
+    if (!customer.customer_id) {
+      console.error('ERROR: Customer does not have a Customer ID set:', customer.business_name || customer.full_name);
+      return new Response(JSON.stringify({
+        error: `Cannot export to Xero: Customer "${customer.business_name || customer.full_name}" does not have a Customer ID assigned. Please assign a Customer ID in the customer details.`,
+        code: 'NO_CUSTOMER_ID'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (customer) {
+      customerName = customer.business_name || customer.full_name || 'Customer';
+      customerEmail = customer.contact_email || customer.email || '';
+      xeroContactId = customer.xero_contact_id || null;
+      console.log('Customer found:', customerName, customerEmail, 'Xero Contact ID:', xeroContactId || 'none');
+    } else {
+      console.log('No customer found for customer_id, using default');
+    }
+
+    // Validate all items have required Xero fields
+    console.log('Validating Xero fields on items...');
+    const itemErrors: string[] = [];
+    for (const orderItem of order.items || []) {
+      const missingFields: string[] = [];
+
+      if (!orderItem.xero_item_code) {
+        missingFields.push('Xero Item Code');
       }
+      if (!orderItem.xero_account_code) {
+        missingFields.push('Xero Account Code');
+      }
+      if (!orderItem.unit_price || orderItem.unit_price <= 0) {
+        missingFields.push('Unit Price');
+      }
+
+      if (missingFields.length > 0) {
+        itemErrors.push(`"${orderItem.name}" is missing: ${missingFields.join(', ')}`);
+      }
+    }
+
+    if (itemErrors.length > 0) {
+      const errorMessage = `Cannot export to Xero. The following items need updating:\n• ${itemErrors.join('\n• ')}`;
+      console.error('ERROR: Items missing Xero fields:', itemErrors);
+      return new Response(JSON.stringify({
+        error: errorMessage,
+        code: 'MISSING_XERO_FIELDS'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     // Build line items with Xero codes
@@ -185,25 +252,16 @@ serve(async (req) => {
       xero_item_code?: string;
       xero_account_code?: string;
     }, index: number) => {
-      const accountCode = orderItem.xero_account_code || DEFAULT_ACCOUNT_CODE;
-      const itemCode = orderItem.xero_item_code;
+      console.log(`Line ${index + 1}: "${orderItem.name}" | Qty: ${orderItem.quantity} | Price: ${orderItem.unit_price} | AccountCode: ${orderItem.xero_account_code} | ItemCode: ${orderItem.xero_item_code}`);
 
-      console.log(`Line ${index + 1}: "${orderItem.name}" | Qty: ${orderItem.quantity} | Price: ${orderItem.unit_price} | AccountCode: ${accountCode} | ItemCode: ${itemCode || 'none'}`);
-
-      const lineItem: Record<string, unknown> = {
+      return {
         Description: orderItem.name,
         Quantity: orderItem.quantity,
         UnitAmount: orderItem.unit_price,
-        AccountCode: accountCode,
+        AccountCode: orderItem.xero_account_code,
+        ItemCode: orderItem.xero_item_code,
         TaxType: 'OUTPUT', // GST on Income
       };
-
-      // Include ItemCode if set
-      if (itemCode) {
-        lineItem.ItemCode = itemCode;
-      }
-
-      return lineItem;
     });
 
     // Calculate dates - use requested_delivery_date from order, due date is 7 days later
@@ -308,6 +366,44 @@ serve(async (req) => {
     }
 
     console.log('Xero Invoice created - ID:', createdInvoice.InvoiceID, 'Number:', createdInvoice.InvoiceNumber);
+
+    // Verify invoice exists in Xero by fetching it back
+    console.log('Verifying invoice exists in Xero...');
+    const verifyResponse = await fetch(`${XERO_API_URL}/Invoices/${createdInvoice.InvoiceID}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${tokenData.accessToken}`,
+        'Xero-Tenant-Id': tokenData.xeroTenantId,
+        Accept: 'application/json',
+      },
+    });
+
+    if (!verifyResponse.ok) {
+      console.error('ERROR: Failed to verify invoice in Xero - status:', verifyResponse.status);
+      return new Response(JSON.stringify({
+        error: 'Invoice was sent to Xero but verification failed. Please check Xero manually.',
+        code: 'VERIFICATION_FAILED'
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const verifyResult = await verifyResponse.json();
+    const verifiedInvoice = verifyResult.Invoices?.[0];
+
+    if (!verifiedInvoice || verifiedInvoice.InvoiceID !== createdInvoice.InvoiceID) {
+      console.error('ERROR: Invoice verification mismatch');
+      return new Response(JSON.stringify({
+        error: 'Invoice verification failed - invoice not found in Xero after creation.',
+        code: 'VERIFICATION_MISMATCH'
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log('Invoice verified in Xero - Status:', verifiedInvoice.Status, 'Total:', verifiedInvoice.Total);
 
     // Fetch PDF from Xero immediately
     console.log('Fetching PDF from Xero...');

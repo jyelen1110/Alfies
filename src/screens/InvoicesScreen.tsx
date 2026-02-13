@@ -13,7 +13,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Print from 'expo-print';
+// Print functionality uses Xero PDFs only - no local HTML generation
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useOrders } from '../context/OrderContext';
@@ -22,10 +22,11 @@ import { getXeroInvoicePDF } from '../services/xero';
 import { supabase } from '../lib/supabase';
 import type { Invoice, InvoiceItem } from '../types';
 
-type ExportStatus = 'not_exported' | 'exported' | 'export_failed';
+type ExportStatus = 'pending' | 'not_exported' | 'exported' | 'export_failed';
 type PaymentStatus = 'pending_payment' | 'paid';
 
 const EXPORT_STATUS_CONFIG: Record<ExportStatus, { label: string; bg: string; text: string; icon: string }> = {
+  pending: { label: 'Processing', bg: '#E3F2FD', text: theme.colors.info, icon: 'hourglass-outline' },
   not_exported: { label: 'Not Exported', bg: '#F5F5F5', text: theme.colors.textMuted, icon: 'cloud-outline' },
   exported: { label: 'Exported', bg: '#E8F8EF', text: theme.colors.success, icon: 'checkmark-circle' },
   export_failed: { label: 'Export Failed', bg: '#FDEDED', text: theme.colors.error, icon: 'alert-circle' },
@@ -80,66 +81,6 @@ function PaymentStatusBadge({ status }: { status: PaymentStatus }) {
   );
 }
 
-function generateInvoiceHtml(invoice: Invoice, supplierName: string): string {
-  const lineItemsHtml = (invoice.items ?? [])
-    .map(
-      (item) => `
-      <tr>
-        <td style="padding:8px;border-bottom:1px solid #eee;">${item.description}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">${item.quantity}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">$${item.unit_price.toFixed(2)}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">$${item.total.toFixed(2)}</td>
-      </tr>`
-    )
-    .join('');
-
-  return `
-    <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          body { font-family: Helvetica, Arial, sans-serif; padding: 40px; color: #2C3E50; }
-          h1 { font-size: 24px; margin-bottom: 4px; }
-          .meta { color: #7F8C8D; font-size: 13px; margin-bottom: 24px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-          th { text-align: left; padding: 8px; border-bottom: 2px solid #2C3E50; font-size: 13px; }
-          th:nth-child(2) { text-align: center; }
-          th:nth-child(3), th:nth-child(4) { text-align: right; }
-          .totals { margin-top: 24px; text-align: right; }
-          .totals .row { display: flex; justify-content: flex-end; gap: 24px; margin-bottom: 4px; font-size: 14px; }
-          .totals .total-row { font-weight: bold; font-size: 18px; margin-top: 8px; border-top: 2px solid #2C3E50; padding-top: 8px; }
-        </style>
-      </head>
-      <body>
-        <h1>Invoice ${invoice.invoice_number}</h1>
-        <p class="meta">
-          Supplier: ${supplierName}<br/>
-          Date: ${formatDate(invoice.invoice_date)}<br/>
-          ${invoice.due_date ? `Due: ${formatDate(invoice.due_date)}<br/>` : ''}
-          Status: ${invoice.status}
-        </p>
-        <table>
-          <thead>
-            <tr>
-              <th>Description</th>
-              <th>Qty</th>
-              <th>Unit Price</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${lineItemsHtml}
-          </tbody>
-        </table>
-        <div class="totals">
-          <div class="row"><span>Subtotal:</span><span>$${invoice.subtotal.toFixed(2)}</span></div>
-          <div class="row"><span>Tax:</span><span>$${invoice.tax.toFixed(2)}</span></div>
-          <div class="row total-row"><span>Total:</span><span>$${invoice.total.toFixed(2)}</span></div>
-        </div>
-      </body>
-    </html>
-  `;
-}
 
 export default function InvoicesScreen() {
   const { state, exportToXero, getSupplierName, loadInvoices } = useOrders();
@@ -152,6 +93,8 @@ export default function InvoicesScreen() {
   const [exporting, setExporting] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   // Update selectedInvoice when invoices change (after export)
   React.useEffect(() => {
@@ -170,13 +113,20 @@ export default function InvoicesScreen() {
   }, [loadInvoices]);
 
   const filteredInvoices = useMemo(() => {
-    // Show invoices that have been processed (exported, paid, or failed - not pending)
-    const processedInvoices = invoices.filter(
-      (inv) => inv.status === 'exported' || inv.status === 'paid' || inv.status === 'export_failed'
+    // Filter by archived status first
+    let filtered = invoices.filter((inv) =>
+      showArchived ? inv.is_archived === true : inv.is_archived !== true
     );
-    if (!selectedSupplier) return processedInvoices;
-    return processedInvoices.filter((inv) => inv.supplier_id === selectedSupplier);
-  }, [invoices, selectedSupplier]);
+    // Then filter by supplier if selected
+    if (selectedSupplier) {
+      filtered = filtered.filter((inv) => inv.supplier_id === selectedSupplier);
+    }
+    return filtered;
+  }, [invoices, selectedSupplier, showArchived]);
+
+  const archivedCount = useMemo(() =>
+    invoices.filter((inv) => inv.is_archived === true).length
+  , [invoices]);
 
   const openDetail = useCallback((invoice: Invoice) => {
     setSelectedInvoice(invoice);
@@ -188,6 +138,14 @@ export default function InvoicesScreen() {
     setSelectedInvoice(null);
   }, []);
 
+  const showMessage = useCallback((title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  }, []);
+
   const handleExport = useCallback(
     async (invoiceId: string) => {
       try {
@@ -195,26 +153,34 @@ export default function InvoicesScreen() {
         await exportToXero(invoiceId);
         // Refresh selected invoice with updated data from context
         // exportToXero already calls loadInvoices, so we need to get fresh data
-        Alert.alert('Success', 'Invoice exported to Xero successfully.');
+        showMessage('Success', 'Invoice exported to Xero successfully.');
       } catch (err: any) {
-        Alert.alert('Export Failed', err?.message ?? 'Could not export invoice to Xero.');
+        showMessage('Export Failed', err?.message ?? 'Could not export invoice to Xero.');
       } finally {
         setExporting(null);
       }
     },
-    [exportToXero]
+    [exportToXero, showMessage]
   );
 
   const handlePrint = useCallback(
     async (invoice: Invoice) => {
+      // Only allow printing if invoice has been exported to Xero
+      if (!invoice.xero_invoice_id) {
+        showMessage('Cannot Print', 'Invoice must be exported to Xero before printing.');
+        return;
+      }
+
       setPrinting(true);
-      console.log('=== Print Invoice ===');
+      console.log('=== Print Invoice (Xero PDF) ===');
       console.log('Invoice ID:', invoice.id);
       console.log('Xero Invoice ID:', invoice.xero_invoice_id);
       console.log('PDF Storage Path:', invoice.pdf_storage_path);
-      console.log('Status:', invoice.status);
+
       try {
-        // Priority 1: Use stored PDF from Supabase Storage
+        let pdfBase64: string | null = null;
+
+        // Try 1: Use stored PDF from Supabase Storage
         if (invoice.pdf_storage_path) {
           console.log('Downloading PDF from storage:', invoice.pdf_storage_path);
           const { data, error } = await supabase.storage
@@ -222,7 +188,6 @@ export default function InvoicesScreen() {
             .download(invoice.pdf_storage_path);
 
           if (!error && data) {
-            // Convert blob to base64
             const reader = new FileReader();
             const base64Promise = new Promise<string>((resolve, reject) => {
               reader.onloadend = () => {
@@ -232,76 +197,97 @@ export default function InvoicesScreen() {
               reader.onerror = reject;
             });
             reader.readAsDataURL(data);
-            const pdfBase64 = await base64Promise;
-
-            // Save to temp file and share
-            const fileUri = `${FileSystem.cacheDirectory}invoice_${invoice.invoice_number}.pdf`;
-            await FileSystem.writeAsStringAsync(fileUri, pdfBase64, {
-              encoding: 'base64',
-            });
-
-            if (await Sharing.isAvailableAsync()) {
-              await Sharing.shareAsync(fileUri, {
-                mimeType: 'application/pdf',
-                dialogTitle: `Invoice ${invoice.invoice_number}`,
-              });
-            } else {
-              Alert.alert('Error', 'Sharing is not available on this device');
-            }
-            return;
+            pdfBase64 = await base64Promise;
+            console.log('PDF loaded from storage');
+          } else {
+            console.error('Failed to download from storage:', error);
           }
-          console.error('Failed to download from storage:', error);
         }
 
-        // Priority 2: Fetch from Xero if exported (legacy invoices without stored PDF)
-        if (invoice.xero_invoice_id) {
+        // Try 2: Fetch from Xero API if not in storage
+        if (!pdfBase64 && invoice.xero_invoice_id) {
           console.log('Fetching PDF from Xero API');
           const result = await getXeroInvoicePDF(invoice.xero_invoice_id);
 
           if (result.success && result.pdf_base64) {
-            const fileUri = `${FileSystem.cacheDirectory}invoice_${invoice.invoice_number}.pdf`;
-            await FileSystem.writeAsStringAsync(fileUri, result.pdf_base64, {
-              encoding: 'base64',
-            });
-
-            if (await Sharing.isAvailableAsync()) {
-              await Sharing.shareAsync(fileUri, {
-                mimeType: 'application/pdf',
-                dialogTitle: `Invoice ${invoice.invoice_number}`,
-              });
-            } else {
-              Alert.alert('Error', 'Sharing is not available on this device');
-            }
-            return;
+            pdfBase64 = result.pdf_base64;
+            console.log('PDF fetched from Xero');
+          } else {
+            console.error('Failed to fetch from Xero:', result.error);
           }
-          console.error('Failed to fetch from Xero');
         }
 
-        // Priority 3: Fall back to local HTML generation
-        console.log('Using local HTML generation');
-        const supplierName = getSupplierName(invoice.supplier_id);
-        const html = generateInvoiceHtml(invoice, supplierName);
-        await Print.printAsync({ html });
+        // If we have a PDF, share/print it
+        if (pdfBase64) {
+          const fileUri = `${FileSystem.cacheDirectory}invoice_${invoice.invoice_number}.pdf`;
+          await FileSystem.writeAsStringAsync(fileUri, pdfBase64, {
+            encoding: 'base64',
+          });
+
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(fileUri, {
+              mimeType: 'application/pdf',
+              dialogTitle: `Invoice ${invoice.invoice_number}`,
+            });
+          } else {
+            showMessage('Error', 'Sharing is not available on this device');
+          }
+        } else {
+          // No PDF available from Xero
+          showMessage('PDF Not Available', 'Could not retrieve the invoice PDF from Xero. Please try again or check your Xero connection.');
+        }
       } catch (error) {
         console.error('Print error:', error);
-        // Try HTML fallback on any error
-        try {
-          const supplierName = getSupplierName(invoice.supplier_id);
-          const html = generateInvoiceHtml(invoice, supplierName);
-          await Print.printAsync({ html });
-        } catch {
-          // User cancelled or print unavailable
-        }
+        showMessage('Print Error', 'Failed to load invoice PDF. Please try again.');
       } finally {
         setPrinting(false);
       }
     },
-    [getSupplierName]
+    [showMessage]
+  );
+
+  const handleArchive = useCallback(
+    async (invoice: Invoice) => {
+      const newArchivedState = !invoice.is_archived;
+      const action = newArchivedState ? 'archive' : 'unarchive';
+
+      setArchiving(true);
+      try {
+        const { error } = await supabase
+          .from('invoices')
+          .update({ is_archived: newArchivedState })
+          .eq('id', invoice.id);
+
+        if (error) {
+          throw error;
+        }
+
+        // Reload invoices to reflect the change
+        await loadInvoices();
+
+        // Close modal after archiving
+        if (newArchivedState) {
+          closeDetail();
+        }
+
+        showMessage(
+          newArchivedState ? 'Archived' : 'Unarchived',
+          `Invoice ${invoice.invoice_number} has been ${action}d.`
+        );
+      } catch (error) {
+        console.error('Archive error:', error);
+        showMessage('Error', `Failed to ${action} invoice. Please try again.`);
+      } finally {
+        setArchiving(false);
+      }
+    },
+    [loadInvoices, closeDetail, showMessage]
   );
 
   const getExportStatus = (invoice: Invoice): ExportStatus => {
     if (invoice.xero_invoice_id) return 'exported';
     if (invoice.status === 'export_failed') return 'export_failed';
+    if (invoice.status === 'pending') return 'pending';
     return 'not_exported';
   };
 
@@ -352,12 +338,20 @@ export default function InvoicesScreen() {
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
-      <Ionicons name="document-text-outline" size={64} color={theme.colors.textMuted} />
-      <Text style={styles.emptyTitle}>No Invoices</Text>
+      <Ionicons
+        name={showArchived ? 'archive-outline' : 'document-text-outline'}
+        size={64}
+        color={theme.colors.textMuted}
+      />
+      <Text style={styles.emptyTitle}>
+        {showArchived ? 'No Archived Invoices' : 'No Invoices'}
+      </Text>
       <Text style={styles.emptySubtitle}>
-        {selectedSupplier
-          ? 'No invoices found for this supplier.'
-          : 'Invoices will appear here once orders are placed.'}
+        {showArchived
+          ? 'Archived invoices will appear here.'
+          : selectedSupplier
+            ? 'No invoices found for this supplier.'
+            : 'Invoices will appear here once orders are placed.'}
       </Text>
     </View>
   );
@@ -370,7 +364,8 @@ export default function InvoicesScreen() {
     const paymentStatus = getPaymentStatus(invoice);
     const supplierName = getSupplierName(invoice.supplier_id);
     const isExported = exportStatus === 'exported';
-    const canExport = exportStatus !== 'exported';
+    const isPending = exportStatus === 'pending';
+    const canExport = exportStatus !== 'exported' && exportStatus !== 'pending';
     const isExporting = exporting === invoice.id;
 
     return (
@@ -429,6 +424,15 @@ export default function InvoicesScreen() {
                 )}
               </View>
 
+              {isPending && (
+                <View style={[styles.xeroExportedBanner, { backgroundColor: '#E3F2FD' }]}>
+                  <Ionicons name="hourglass-outline" size={18} color={theme.colors.info} />
+                  <Text style={[styles.xeroExportedText, { color: theme.colors.info }]}>
+                    Exporting to Xero...
+                  </Text>
+                </View>
+              )}
+
               {isExported && invoice.exported_at && (
                 <View style={styles.xeroExportedBanner}>
                   <Ionicons name="checkmark-circle" size={18} color={theme.colors.success} />
@@ -441,9 +445,19 @@ export default function InvoicesScreen() {
               {exportStatus === 'export_failed' && (
                 <View style={[styles.xeroExportedBanner, { backgroundColor: '#FDEDED' }]}>
                   <Ionicons name="alert-circle" size={18} color={theme.colors.error} />
-                  <Text style={[styles.xeroExportedText, { color: theme.colors.error }]}>
-                    Export to Xero failed. Tap below to retry.
-                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.xeroExportedText, { color: theme.colors.error }]}>
+                      Export to Xero failed
+                    </Text>
+                    {invoice.export_error && (
+                      <Text style={[styles.exportErrorText, { color: theme.colors.error }]}>
+                        {invoice.export_error}
+                      </Text>
+                    )}
+                    <Text style={[styles.xeroExportedText, { color: theme.colors.textMuted, marginTop: 4 }]}>
+                      Tap below to retry.
+                    </Text>
+                  </View>
                 </View>
               )}
             </View>
@@ -529,32 +543,46 @@ export default function InvoicesScreen() {
                 )}
               </TouchableOpacity>
             )}
+            {isExported && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.printButton]}
+                onPress={() => handlePrint(invoice)}
+                disabled={printing}
+                activeOpacity={0.7}
+              >
+                {printing ? (
+                  <ActivityIndicator size="small" color={theme.colors.white} />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="print-outline"
+                      size={20}
+                      color={theme.colors.white}
+                    />
+                    <Text style={styles.actionButtonText}>
+                      Print Invoice
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
-              style={[
-                styles.actionButton,
-                styles.printButton,
-                canExport && styles.printButtonSecondary,
-              ]}
-              onPress={() => handlePrint(invoice)}
-              disabled={printing}
+              style={[styles.actionButton, styles.archiveButton]}
+              onPress={() => handleArchive(invoice)}
+              disabled={archiving}
               activeOpacity={0.7}
             >
-              {printing ? (
-                <ActivityIndicator size="small" color={canExport ? theme.colors.accent : theme.colors.white} />
+              {archiving ? (
+                <ActivityIndicator size="small" color={theme.colors.textMuted} />
               ) : (
                 <>
                   <Ionicons
-                    name="print-outline"
+                    name={invoice.is_archived ? 'arrow-undo-outline' : 'archive-outline'}
                     size={20}
-                    color={canExport ? theme.colors.accent : theme.colors.white}
+                    color={theme.colors.textMuted}
                   />
-                  <Text
-                    style={[
-                      styles.actionButtonText,
-                      canExport && styles.printButtonTextSecondary,
-                    ]}
-                  >
-                    Print Invoice
+                  <Text style={styles.archiveButtonText}>
+                    {invoice.is_archived ? 'Unarchive' : 'Archive'}
                   </Text>
                 </>
               )}
@@ -636,18 +664,38 @@ export default function InvoicesScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Invoices</Text>
-        <TouchableOpacity
-          style={styles.filterButton}
-          onPress={() => setSupplierFilterOpen(true)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="funnel-outline" size={18} color={theme.colors.text} />
-          <Text style={styles.filterButtonText} numberOfLines={1}>
-            {selectedSupplierName}
-          </Text>
-          <Ionicons name="chevron-down" size={16} color={theme.colors.textSecondary} />
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>
+          {showArchived ? 'Archived Invoices' : 'Invoices'}
+        </Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[styles.archiveToggle, showArchived && styles.archiveToggleActive]}
+            onPress={() => setShowArchived(!showArchived)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={showArchived ? 'document-text-outline' : 'archive-outline'}
+              size={18}
+              color={showArchived ? theme.colors.accent : theme.colors.textMuted}
+            />
+            {archivedCount > 0 && !showArchived && (
+              <View style={styles.archiveBadge}>
+                <Text style={styles.archiveBadgeText}>{archivedCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.filterButton}
+            onPress={() => setSupplierFilterOpen(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="funnel-outline" size={18} color={theme.colors.text} />
+            <Text style={styles.filterButtonText} numberOfLines={1}>
+              {selectedSupplierName}
+            </Text>
+            <Ionicons name="chevron-down" size={16} color={theme.colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Invoice List */}
@@ -715,6 +763,36 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.sm ?? 13,
     color: theme.colors.text,
     flexShrink: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  archiveToggle: {
+    padding: theme.spacing.xs,
+    borderRadius: theme.borderRadius.sm ?? 4,
+    position: 'relative',
+  },
+  archiveToggleActive: {
+    backgroundColor: theme.colors.background,
+  },
+  archiveBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: theme.colors.textMuted,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  archiveBadgeText: {
+    color: theme.colors.white,
+    fontSize: 10,
+    fontWeight: theme.fontWeight.bold ?? '700',
   },
 
   // ---- List ----
@@ -950,6 +1028,11 @@ const styles = StyleSheet.create({
     color: theme.colors.info,
     fontWeight: theme.fontWeight.medium ?? '500',
   },
+  exportErrorText: {
+    fontSize: theme.fontSize.xs ?? 11,
+    marginTop: 4,
+    lineHeight: 16,
+  },
   sectionTitle: {
     fontSize: theme.fontSize.md ?? 15,
     fontWeight: theme.fontWeight.semibold ?? '600',
@@ -1072,5 +1155,15 @@ const styles = StyleSheet.create({
   },
   printButtonTextSecondary: {
     color: theme.colors.accent,
+  },
+  archiveButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+  },
+  archiveButtonText: {
+    fontSize: theme.fontSize.md ?? 15,
+    fontWeight: theme.fontWeight.semibold ?? '600',
+    color: theme.colors.textMuted,
   },
 });

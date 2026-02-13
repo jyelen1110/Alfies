@@ -5,6 +5,9 @@ export const config = {
   runtime: 'edge',
 };
 
+const SUPABASE_URL = 'https://cijgmmckafmfmmlpvgyi.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpamdtbWNrYWZtZm1tbHB2Z3lpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMjQzNTgsImV4cCI6MjA4NTYwMDM1OH0.nwe0aDmwCKGbdFHwiWhEv6aeonwwOO1mmLQTQw2wuFU';
+
 export default async function handler(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get('code');
@@ -12,7 +15,6 @@ export default async function handler(request: Request) {
   const error = url.searchParams.get('error');
 
   const appUrl = 'https://easy-ordering.vercel.app';
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://cijgmmckafmfmmlpvgyi.supabase.co';
 
   // Handle errors from Google
   if (error) {
@@ -25,9 +27,12 @@ export default async function handler(request: Request) {
 
   try {
     // Call the gmail-callback edge function to exchange the code
-    const response = await fetch(`${supabaseUrl}/functions/v1/gmail-callback`, {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/gmail-callback`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY,
+      },
       body: JSON.stringify({ code, state }),
     });
 

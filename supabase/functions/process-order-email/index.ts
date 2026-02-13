@@ -22,7 +22,7 @@ interface EmailPayload {
 }
 
 interface ParsedOrderData {
-  supplierName: string;
+  customerName: string;
   items: ParsedOrderItem[];
 }
 
@@ -38,7 +38,7 @@ interface ParsedOrderItem {
 const orderParsePrompt = `You are an order data extractor. Extract order information from the provided document (purchase order, order confirmation, CSV, etc).
 
 Return a JSON object with:
-1. "supplierName": The supplier/vendor name (look for company name, "From:", "Supplier:", header, or letterhead)
+1. "customerName": The customer/buyer name (look for business name, company name, "Customer:", "Bill To:", "Ship To:", or header)
 2. "items": Array of order line items
 
 Each item should have:
@@ -51,14 +51,14 @@ Each item should have:
 
 Return ONLY valid JSON, no other text. Example:
 {
-  "supplierName": "ABC Supplies Pty Ltd",
+  "customerName": "ABC Cafe Pty Ltd",
   "items": [
     {"name": "Product A", "code": "ABC123", "quantity": 10, "unit": "each", "unit_price": 5.99}
   ]
 }
 
 If this is not an order document or you cannot extract order items, return:
-{"supplierName": "", "items": []}`
+{"customerName": "", "items": []}`
 
 async function parseAttachmentWithClaude(
   attachment: Attachment,
@@ -100,7 +100,7 @@ async function parseAttachmentWithClaude(
               },
               {
                 type: 'text',
-                text: `Extract the supplier name and all order line items from this document (${attachment.filename}). Return as JSON.`
+                text: `Extract the customer name and all order line items from this document (${attachment.filename}). Return as JSON.`
               }
             ]
           }
@@ -130,7 +130,7 @@ async function parseAttachmentWithClaude(
         messages: [
           {
             role: 'user',
-            content: `Extract the supplier name and order line items from this document content (${attachment.filename}):\n\n${textContent}`
+            content: `Extract the customer name and order line items from this document content (${attachment.filename}):\n\n${textContent}`
           }
         ],
       }),
@@ -150,7 +150,7 @@ async function parseAttachmentWithClaude(
 
   if (!content) {
     console.log(`No content in Claude response for ${attachment.filename}`)
-    return { supplierName: '', items: [] }
+    return { customerName: '', items: [] }
   }
 
   // Parse JSON from response
@@ -163,57 +163,87 @@ async function parseAttachmentWithClaude(
     const parsed = JSON.parse(jsonStr)
     console.log(`Parsed ${parsed.items?.length || 0} items from ${attachment.filename}`)
     return {
-      supplierName: parsed.supplierName || '',
+      customerName: parsed.customerName || '',
       items: (parsed.items || []).filter((item: ParsedOrderItem) => item.name && item.quantity)
     }
   } catch (parseError) {
     console.error(`JSON parse error for ${attachment.filename}:`, parseError, 'Content:', jsonStr.substring(0, 200))
-    return { supplierName: '', items: [] }
+    return { customerName: '', items: [] }
   }
 }
 
-async function findSupplierByName(
+async function findCustomerByName(
   supabase: ReturnType<typeof createClient>,
   tenantId: string,
-  supplierName: string
-): Promise<{ id: string; name: string } | null> {
-  if (!supplierName) return null
+  customerName: string
+): Promise<{ id: string; business_name: string } | null> {
+  if (!customerName) return null
 
-  const searchName = supplierName.toLowerCase().trim()
+  const searchName = customerName.toLowerCase().trim()
+  console.log(`Looking for customer: "${searchName}"`)
 
-  // Fetch all active suppliers for the tenant
-  const { data: suppliers, error } = await supabase
-    .from('suppliers')
-    .select('id, name')
+  // Fetch all customers (users with role 'user') for the tenant
+  const { data: customers, error } = await supabase
+    .from('users')
+    .select('id, business_name, full_name')
     .eq('tenant_id', tenantId)
-    .eq('status', 'active')
+    .eq('role', 'user')
 
-  if (error || !suppliers) {
-    console.error('Failed to fetch suppliers:', error)
+  if (error || !customers) {
+    console.error('Failed to fetch customers:', error)
     return null
   }
 
-  // Try exact match first
-  let match = suppliers.find(s => s.name.toLowerCase().trim() === searchName)
+  console.log(`Found ${customers.length} customers to search`)
 
-  // Try partial match (supplier name contains search or vice versa)
+  // Try exact match on business_name first
+  let match = customers.find(c => c.business_name?.toLowerCase().trim() === searchName)
+
+  // Try partial match (customer name contains search or vice versa)
   if (!match) {
-    match = suppliers.find(s => {
-      const sName = s.name.toLowerCase().trim()
-      return sName.includes(searchName) || searchName.includes(sName)
+    match = customers.find(c => {
+      const cName = (c.business_name || c.full_name || '').toLowerCase().trim()
+      return cName.includes(searchName) || searchName.includes(cName)
     })
   }
 
   // Try word-based matching (any significant word matches)
   if (!match) {
     const searchWords = searchName.split(/\s+/).filter(w => w.length > 3)
-    match = suppliers.find(s => {
-      const sName = s.name.toLowerCase()
-      return searchWords.some(word => sName.includes(word))
+    match = customers.find(c => {
+      const cName = (c.business_name || c.full_name || '').toLowerCase()
+      return searchWords.some(word => cName.includes(word))
     })
   }
 
-  return match || null
+  if (match) {
+    console.log(`Found customer: ${match.business_name} (${match.id})`)
+  } else {
+    console.log(`No customer found for: "${customerName}"`)
+  }
+
+  return match ? { id: match.id, business_name: match.business_name || match.full_name } : null
+}
+
+async function getDefaultSupplier(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string
+): Promise<{ id: string; name: string } | null> {
+  // Get the first active supplier for the tenant (your own supplier record)
+  const { data: suppliers, error } = await supabase
+    .from('suppliers')
+    .select('id, name')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'active')
+    .limit(1)
+
+  if (error || !suppliers || suppliers.length === 0) {
+    console.error('Failed to fetch default supplier:', error)
+    return null
+  }
+
+  console.log(`Using default supplier: ${suppliers[0].name}`)
+  return suppliers[0]
 }
 
 serve(async (req) => {
@@ -254,25 +284,42 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Check if email already processed
-    const { data: existingImport } = await supabase
+    // Use INSERT to atomically claim this message_id (UNIQUE constraint prevents duplicates)
+    // This prevents race conditions when cron and manual check run simultaneously
+    const { data: importRecord, error: insertError } = await supabase
       .from('email_order_imports')
-      .select('id, order_id')
-      .eq('message_id', messageId)
+      .insert({
+        tenant_id: tenantId,
+        message_id: messageId,
+        sender,
+        subject,
+        received_at: receivedDate,
+        status: 'processing',  // Mark as processing, will update when done
+      })
+      .select('id')
       .single()
 
-    if (existingImport) {
+    if (insertError) {
+      // If insert fails due to unique constraint, email is already being processed
+      if (insertError.code === '23505') {  // PostgreSQL unique violation
+        console.log(`Email ${messageId} already being processed (duplicate)`)
+        return new Response(
+          JSON.stringify({ error: 'Email already processed or in progress' }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      console.error('Error creating import record:', insertError)
       return new Response(
-        JSON.stringify({
-          error: 'Email already processed',
-          existingOrderId: existingImport.order_id
-        }),
-        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Failed to create import record', details: insertError.message }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
+    const importId = importRecord.id
+    console.log(`Created import record ${importId} for message ${messageId}`)
+
     // Parse attachments - prioritize CSV (smallest), then XLSX, then PDF
-    let supplierName = ''
+    let customerName = ''
     let allParsedItems: ParsedOrderItem[] = []
 
     // Sort attachments: CSV first, then XLSX, then PDF
@@ -297,9 +344,9 @@ serve(async (req) => {
       console.log(`Parsing attachment: ${attachment.filename} (${attachment.contentType}, ${attachment.content?.length || 0} bytes)`)
       try {
         const parsed = await parseAttachmentWithClaude(attachment, anthropicKey)
-        console.log(`Parsed result: supplier="${parsed.supplierName}", items=${parsed.items.length}`)
-        if (parsed.supplierName && !supplierName) {
-          supplierName = parsed.supplierName
+        console.log(`Parsed result: customer="${parsed.customerName}", items=${parsed.items.length}`)
+        if (parsed.customerName && !customerName) {
+          customerName = parsed.customerName
         }
         allParsedItems = allParsedItems.concat(parsed.items)
       } catch (err) {
@@ -309,17 +356,14 @@ serve(async (req) => {
     console.log(`Total parsed items: ${allParsedItems.length}`)
 
     if (allParsedItems.length === 0) {
-      // Log failed import
-      await supabase.from('email_order_imports').insert({
-        tenant_id: tenantId,
-        message_id: messageId,
-        sender,
-        subject,
-        received_at: receivedDate,
-        status: 'failed',
-        error_message: 'No order items could be extracted from attachments',
-        raw_data: { attachments: attachments.map(a => a.filename) }
-      })
+      // Update import record as failed
+      await supabase.from('email_order_imports')
+        .update({
+          status: 'failed',
+          error_message: 'No order items could be extracted from attachments',
+          raw_data: { attachments: attachments.map(a => a.filename) }
+        })
+        .eq('id', importId)
 
       return new Response(
         JSON.stringify({
@@ -330,28 +374,28 @@ serve(async (req) => {
       )
     }
 
-    // Find supplier by name from parsed data
-    const supplier = await findSupplierByName(supabase, tenantId, supplierName)
+    // Get default supplier (your own supplier record)
+    const supplier = await getDefaultSupplier(supabase, tenantId)
 
     if (!supplier) {
-      await supabase.from('email_order_imports').insert({
-        tenant_id: tenantId,
-        message_id: messageId,
-        sender,
-        subject,
-        received_at: receivedDate,
-        status: 'failed',
-        error_message: `Supplier not found: "${supplierName}"`,
-        raw_data: { supplierName, parsedItems: allParsedItems }
-      })
+      await supabase.from('email_order_imports')
+        .update({
+          status: 'failed',
+          error_message: 'No supplier configured for this tenant',
+          raw_data: { customerName, parsedItems: allParsedItems }
+        })
+        .eq('id', importId)
 
       return new Response(
-        JSON.stringify({
-          error: `Supplier not found in database: "${supplierName}"`,
-          extractedSupplierName: supplierName
-        }),
+        JSON.stringify({ error: 'No supplier configured. Please add a supplier first.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
+    }
+
+    // Find customer by name from parsed data (optional - order can be created without customer)
+    const customer = await findCustomerByName(supabase, tenantId, customerName)
+    if (!customer) {
+      console.log(`Customer "${customerName}" not found - order will be created without customer_id`)
     }
 
     // Match parsed items to existing inventory items
@@ -360,11 +404,14 @@ serve(async (req) => {
       name: string;
       sku: string | null;
       wholesale_price: number | null;
+      tax_rate: number | null;
+      xero_item_code: string | null;
+      xero_account_code: string | null;
     }
 
     const { data: inventoryItems, error: itemsError } = await supabase
       .from('items')
-      .select('id, name, sku, wholesale_price')
+      .select('id, name, sku, wholesale_price, tax_rate, xero_item_code, xero_account_code')
       .eq('tenant_id', tenantId)
       .eq('supplier_id', supplier.id)
       .eq('status', 'active')
@@ -376,120 +423,120 @@ serve(async (req) => {
     const items: InventoryItem[] = inventoryItems || []
     console.log(`Fetched ${items.length} inventory items for supplier ${supplier.name}`)
 
+    // Load item name aliases for fuzzy matching
+    interface ItemAlias {
+      alias_name: string;
+      item_id: string;
+    }
+    const { data: aliasData } = await supabase
+      .from('item_name_aliases')
+      .select('alias_name, item_id')
+      .eq('tenant_id', tenantId)
+
+    const aliases: ItemAlias[] = aliasData || []
+    console.log(`Loaded ${aliases.length} item name aliases`)
+
+    // Create a map of alias_name -> item for fast lookup
+    const aliasMap = new Map<string, InventoryItem>()
+    for (const alias of aliases) {
+      const item = items.find(i => i.id === alias.item_id)
+      if (item) {
+        aliasMap.set(alias.alias_name.toLowerCase(), item)
+      }
+    }
+
     const matchedItems: Array<{
       itemId: string;
       name: string;
       quantity: number;
       unit: string;
       unitPrice: number;
+      taxRate: number;
+      xeroItemCode: string | null;
+      xeroAccountCode: string | null;
     }> = []
     const unmatchedItems: string[] = []
 
-    // Helper function to normalize and extract significant words
-    const getSignificantWords = (text: string): string[] => {
-      const stopWords = ['and', 'the', 'a', 'an', 'of', 'for', 'with', 'in', 'on', 'to', 'by', 'per', 'each']
+    // Helper function to normalize name for comparison
+    const normalizeName = (text: string): string => {
       return text
         .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, ' ')  // Remove special chars
-        .split(/\s+/)
-        .filter(w => w.length > 2 && !stopWords.includes(w))
-    }
-
-    // Calculate word match score (percentage of words that match)
-    const calculateMatchScore = (words1: string[], words2: string[]): number => {
-      if (words1.length === 0 || words2.length === 0) return 0
-      let matches = 0
-      for (const w1 of words1) {
-        // Check if any word in words2 contains w1 or vice versa
-        if (words2.some(w2 => w1.includes(w2) || w2.includes(w1))) {
-          matches++
-        }
-      }
-      // Return percentage of words1 that matched
-      return matches / words1.length
+        .replace(/[''`]/g, "'")  // Normalize apostrophes
+        .replace(/[^a-z0-9\s']/g, ' ')  // Remove special chars except apostrophe
+        .replace(/\s+/g, ' ')  // Collapse whitespace
+        .trim()
     }
 
     console.log(`Total inventory items to match against: ${items.length || 0}`)
 
     for (const parsed of allParsedItems) {
-      // Try to match by SKU/code first, then by name
+      // Try to match by SKU/code first, then by EXACT name match only
       const parsedCode = (parsed.code || parsed.sku || '').toLowerCase().trim()
-      const parsedName = parsed.name.toLowerCase().trim()
-      const parsedWords = getSignificantWords(parsed.name)
+      const parsedName = normalizeName(parsed.name)
 
-      console.log(`\nMatching: "${parsed.name}" (code: ${parsedCode})`)
-      console.log(`  Parsed words: [${parsedWords.join(', ')}]`)
+      console.log(`\nMatching: "${parsed.name}" -> normalized: "${parsedName}" (code: ${parsedCode})`)
 
       let matchedItem = items.find(inv => {
         const invSku = (inv.sku || '').toLowerCase().trim()
-        const invName = inv.name.toLowerCase().trim()
+        const invName = normalizeName(inv.name)
 
-        // Exact SKU match
-        if (parsedCode && invSku && parsedCode === invSku) return true
-        // Exact name match
-        if (parsedName === invName) return true
-        // Partial name match (parsed name contained in inventory name or vice versa)
-        if (parsedName && invName && (invName.includes(parsedName) || parsedName.includes(invName))) return true
+        // Exact SKU match (highest priority)
+        if (parsedCode && invSku && parsedCode === invSku) {
+          console.log(`  SKU MATCH: "${inv.name}" (${invSku})`)
+          return true
+        }
+        // Exact normalized name match only - NO fuzzy matching
+        if (parsedName === invName) {
+          console.log(`  EXACT NAME MATCH: "${inv.name}"`)
+          return true
+        }
 
         return false
       })
 
-      if (matchedItem) {
-        console.log(`  EXACT MATCH: "${matchedItem.name}" (${matchedItem.sku})`)
-      }
-
-      // If no exact match, try fuzzy word matching
-      if (!matchedItem && parsedWords.length > 0) {
-        let bestScore = 0
-        let bestMatch: InventoryItem | null = null
-
-        for (const inv of items || []) {
-          const invWords = getSignificantWords(inv.name)
-          const score = calculateMatchScore(parsedWords, invWords)
-          // Require at least 60% of words to match
-          if (score >= 0.6 && score > bestScore) {
-            bestScore = score
-            bestMatch = inv
-            console.log(`  Candidate: "${inv.name}" score=${score.toFixed(2)} words=[${invWords.join(', ')}]`)
-          }
-        }
-
-        if (bestMatch) {
-          console.log(`Fuzzy matched "${parsed.name}" -> "${bestMatch.name}" (score: ${bestScore.toFixed(2)})`)
-          matchedItem = bestMatch
+      // If no direct match, check aliases
+      if (!matchedItem) {
+        const aliasMatch = aliasMap.get(parsedName)
+        if (aliasMatch) {
+          console.log(`  ALIAS MATCH: "${parsed.name}" -> "${aliasMatch.name}"`)
+          matchedItem = aliasMatch
         }
       }
 
       if (matchedItem) {
+        if (!matchedItem.xero_item_code) {
+          console.log(`  WARNING: Item "${matchedItem.name}" has no Xero Item Code - will fail on export`)
+        }
         matchedItems.push({
           itemId: matchedItem.id,
           name: matchedItem.name,
           quantity: parsed.quantity,
           unit: parsed.unit || 'each',
-          unitPrice: parsed.unit_price || matchedItem.wholesale_price || 0
+          unitPrice: parsed.unit_price || matchedItem.wholesale_price || 0,
+          taxRate: matchedItem.tax_rate || 0,
+          xeroItemCode: matchedItem.xero_item_code,
+          xeroAccountCode: matchedItem.xero_account_code
         })
       } else {
-        unmatchedItems.push(`${parsed.name} (${parsed.code || parsed.sku || 'no code'})`)
+        console.log(`  NO MATCH FOUND for "${parsed.name}"`)
+        unmatchedItems.push(`${parsed.name} x${parsed.quantity} (${parsed.code || parsed.sku || 'no code'})`)
       }
     }
 
     // If no items matched at all, fail the import
     if (matchedItems.length === 0) {
-      await supabase.from('email_order_imports').insert({
-        tenant_id: tenantId,
-        message_id: messageId,
-        sender,
-        subject,
-        received_at: receivedDate,
-        status: 'failed',
-        error_message: `No items could be matched. Unmatched: ${unmatchedItems.join(', ')}`,
-        raw_data: { supplierName, parsedItems: allParsedItems, unmatchedItems }
-      })
+      await supabase.from('email_order_imports')
+        .update({
+          status: 'failed',
+          error_message: `No items could be matched. Unmatched: ${unmatchedItems.join(', ')}`,
+          raw_data: { customerName, parsedItems: allParsedItems, unmatchedItems }
+        })
+        .eq('id', importId)
 
       return new Response(
         JSON.stringify({
           error: 'No items could be matched to inventory',
-          supplier: supplier.name,
+          customer: customer?.business_name || customerName,
           unmatchedItems,
           matchedCount: 0
         }),
@@ -497,9 +544,17 @@ serve(async (req) => {
       )
     }
 
-    // Calculate totals
+    // Calculate totals with GST
     const subtotal = matchedItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+    const tax = matchedItems.reduce((sum, item) => {
+      const lineTotal = item.quantity * item.unitPrice
+      const lineTax = lineTotal * (item.taxRate / 100)
+      return sum + lineTax
+    }, 0)
+    const total = subtotal + tax
     const hasUnmatchedItems = unmatchedItems.length > 0
+
+    console.log(`Order totals: subtotal=${subtotal.toFixed(2)}, tax=${tax.toFixed(2)}, total=${total.toFixed(2)}`)
 
     // Build notes with unmatched items info
     let orderNotes = `Imported from email: ${subject} (${sender})`
@@ -513,9 +568,11 @@ serve(async (req) => {
       .insert({
         tenant_id: tenantId,
         supplier_id: supplier.id,
+        customer_id: customer?.id || null,
         order_date: new Date().toISOString().split('T')[0],
         subtotal,
-        total: subtotal,
+        tax,
+        total,
         status: 'pending_approval',
         notes: orderNotes
       })
@@ -526,16 +583,17 @@ serve(async (req) => {
       throw new Error(`Failed to create order: ${orderError.message}`)
     }
 
-    // Create order items
+    // Create order items with Xero codes
     const orderItems = matchedItems.map(item => ({
       order_id: order.id,
       tenant_id: tenantId,
       procurement_item_id: item.itemId,
       name: item.name,
       quantity: item.quantity,
-      unit: item.unit,
       unit_price: item.unitPrice,
-      total: item.quantity * item.unitPrice
+      total: item.quantity * item.unitPrice,
+      xero_item_code: item.xeroItemCode,
+      xero_account_code: item.xeroAccountCode
     }))
 
     const { error: orderItemsError } = await supabase
@@ -548,27 +606,27 @@ serve(async (req) => {
       throw new Error(`Failed to create order items: ${orderItemsError.message}`)
     }
 
-    // Log import (partial if there were unmatched items)
-    await supabase.from('email_order_imports').insert({
-      tenant_id: tenantId,
-      message_id: messageId,
-      sender,
-      subject,
-      received_at: receivedDate,
-      order_id: order.id,
-      status: hasUnmatchedItems ? 'partial' : 'success',
-      error_message: hasUnmatchedItems ? `Unmatched items: ${unmatchedItems.join(', ')}` : null,
-      raw_data: { supplierName, parsedItems: allParsedItems, matchedItems, unmatchedItems }
-    })
+    // Update import record with success (partial if there were unmatched items)
+    await supabase.from('email_order_imports')
+      .update({
+        order_id: order.id,
+        status: hasUnmatchedItems ? 'partial' : 'success',
+        error_message: hasUnmatchedItems ? `Unmatched items: ${unmatchedItems.join(', ')}` : null,
+        raw_data: { customerName, customer: customer?.business_name, parsedItems: allParsedItems, matchedItems, unmatchedItems }
+      })
+      .eq('id', importId)
 
     return new Response(
       JSON.stringify({
         success: true,
         orderId: order.id,
         orderNumber: order.order_number,
-        supplier: supplier.name,
+        customer: customer?.business_name || null,
+        customerId: customer?.id || null,
         itemCount: matchedItems.length,
-        total: subtotal,
+        subtotal,
+        tax,
+        total,
         hasUnmatchedItems,
         unmatchedItems: hasUnmatchedItems ? unmatchedItems : undefined,
         unmatchedCount: unmatchedItems.length
@@ -578,8 +636,11 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error processing order email:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const errorStack = error instanceof Error ? error.stack : undefined
+    console.error('Error stack:', errorStack)
     return new Response(
-      JSON.stringify({ error: 'Internal server error', details: String(error) }),
+      JSON.stringify({ error: 'Internal server error', details: errorMessage, stack: errorStack }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }

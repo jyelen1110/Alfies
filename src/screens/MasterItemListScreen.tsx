@@ -12,6 +12,7 @@ import {
   RefreshControl,
   Modal,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -31,6 +32,7 @@ interface EditItemModalProps {
   isNew?: boolean;
   onClose: () => void;
   onSave: (item: Item) => void;
+  onDelete?: (item: Item) => void;
 }
 
 const STATUS_OPTIONS = [
@@ -39,10 +41,10 @@ const STATUS_OPTIONS = [
   { value: 'sold_out', label: 'Sold Out' },
 ] as const;
 
-function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose, onSave }: EditItemModalProps) {
+function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose, onSave, onDelete }: EditItemModalProps) {
   const [formData, setFormData] = useState({
     name: '',
-    category: '',
+    categories: [] as string[],
     country_of_origin: '',
     size: '',
     carton_size: '',
@@ -65,9 +67,13 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
   // Update form when item changes
   useMemo(() => {
     if (item) {
+      // Use categories array if available, otherwise fall back to single category
+      const itemCategories = item.categories && item.categories.length > 0
+        ? item.categories
+        : (item.category ? [item.category] : []);
       setFormData({
         name: item.name || '',
-        category: item.category || '',
+        categories: itemCategories,
         country_of_origin: item.country_of_origin || '',
         size: item.size || '',
         carton_size: item.carton_size?.toString() || '',
@@ -89,7 +95,7 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
       // Reset form for new item
       setFormData({
         name: '',
-        category: '',
+        categories: [],
         country_of_origin: '',
         size: '',
         carton_size: '',
@@ -112,6 +118,19 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
 
   const updateField = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const toggleCategory = (category: string) => {
+    setFormData(prev => {
+      const currentCategories = prev.categories;
+      if (currentCategories.includes(category)) {
+        // Remove category
+        return { ...prev, categories: currentCategories.filter(c => c !== category) };
+      } else {
+        // Add category
+        return { ...prev, categories: [...currentCategories, category] };
+      }
+    });
   };
 
   const pickImage = async () => {
@@ -203,7 +222,10 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
       tenant_id: item?.tenant_id || '',
       supplier_id: formData.supplier_id || item?.supplier_id || '',
       name: formData.name,
-      category: formData.category || undefined,
+      // Keep single category for backwards compatibility (use first selected)
+      category: formData.categories.length > 0 ? formData.categories[0] : undefined,
+      // Store full categories array
+      categories: formData.categories.length > 0 ? formData.categories : undefined,
       country_of_origin: formData.country_of_origin || undefined,
       size: formData.size || undefined,
       carton_size: formData.carton_size ? parseInt(formData.carton_size) : undefined,
@@ -248,28 +270,29 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
               placeholder="Item name"
             />
 
-            <Text style={styles.inputLabel}>Category</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categorySelect}>
-              <TouchableOpacity
-                style={[styles.categoryOption, !formData.category && styles.categoryOptionActive]}
-                onPress={() => updateField('category', '')}
-              >
-                <Text style={[styles.categoryOptionText, !formData.category && styles.categoryOptionTextActive]}>
-                  None
-                </Text>
-              </TouchableOpacity>
-              {CATEGORIES.filter(c => c !== 'All').map((cat) => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[styles.categoryOption, formData.category === cat && styles.categoryOptionActive]}
-                  onPress={() => updateField('category', cat)}
-                >
-                  <Text style={[styles.categoryOptionText, formData.category === cat && styles.categoryOptionTextActive]}>
-                    {cat}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            <Text style={styles.inputLabel}>
+              Categories {formData.categories.length > 0 && `(${formData.categories.length} selected)`}
+            </Text>
+            <Text style={styles.inputHint}>Tap to select multiple categories</Text>
+            <View style={styles.categoryGrid}>
+              {CATEGORIES.filter(c => c !== 'All').map((cat) => {
+                const isSelected = formData.categories.includes(cat);
+                return (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.categoryGridOption, isSelected && styles.categoryGridOptionActive]}
+                    onPress={() => toggleCategory(cat)}
+                  >
+                    {isSelected && (
+                      <Ionicons name="checkmark-circle" size={16} color={theme.colors.white} style={styles.categoryCheckIcon} />
+                    )}
+                    <Text style={[styles.categoryGridOptionText, isSelected && styles.categoryGridOptionTextActive]}>
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
             <Text style={styles.inputLabel}>Country of Origin</Text>
             <TextInput
@@ -477,6 +500,14 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
           </ScrollView>
 
           <View style={styles.modalFooter}>
+            {!isNew && item && onDelete && (
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={() => onDelete(item)}
+              >
+                <Ionicons name="trash-outline" size={20} color={theme.colors.danger} />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
@@ -509,6 +540,7 @@ export default function MasterItemListScreen() {
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [sortBy, setSortBy] = useState<'name' | 'price' | 'category'>('name');
   const [sortAsc, setSortAsc] = useState(true);
+  const [showInactive, setShowInactive] = useState(false);
 
   // AI Import state
   const [showImportModal, setShowImportModal] = useState(false);
@@ -533,13 +565,20 @@ export default function MasterItemListScreen() {
   const filteredItems = useMemo(() => {
     const filtered = state.items.filter((item) => {
       const matchesSupplier = !selectedSupplierId || item.supplier_id === selectedSupplierId;
+      // Check categories array first, then fall back to single category
+      const itemCategories = item.categories && item.categories.length > 0
+        ? item.categories
+        : (item.category ? [item.category] : []);
       const matchesCategory =
-        !selectedCategory || selectedCategory === 'All' || item.category === selectedCategory;
+        !selectedCategory || selectedCategory === 'All' || itemCategories.includes(selectedCategory);
       const matchesSearch =
         !searchQuery ||
         item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (item.barcode && item.barcode.toLowerCase().includes(searchQuery.toLowerCase()));
-      return matchesSupplier && matchesSearch && matchesCategory && item.status === 'active';
+      const matchesStatus = showInactive
+        ? item.status === 'inactive' || item.status === 'sold_out'
+        : item.status === 'active';
+      return matchesSupplier && matchesSearch && matchesCategory && matchesStatus;
     });
 
     // Sort items
@@ -558,7 +597,7 @@ export default function MasterItemListScreen() {
       }
       return sortAsc ? comparison : -comparison;
     });
-  }, [state.items, selectedSupplierId, selectedCategory, searchQuery, sortBy, sortAsc]);
+  }, [state.items, selectedSupplierId, selectedCategory, searchQuery, sortBy, sortAsc, showInactive]);
 
   // Group items by category for summary
   const itemStats = useMemo(() => {
@@ -567,13 +606,26 @@ export default function MasterItemListScreen() {
 
     state.items.forEach((item) => {
       if (item.status === 'active') {
-        const category = item.category || 'Uncategorized';
-        byCategory[category] = (byCategory[category] || 0) + 1;
+        // Get all categories for the item
+        const categories = item.categories && item.categories.length > 0
+          ? item.categories
+          : (item.category ? [item.category] : ['Uncategorized']);
+        // Count item in each category it belongs to
+        categories.forEach(cat => {
+          byCategory[cat] = (byCategory[cat] || 0) + 1;
+        });
         bySupplier[item.supplier_id] = (bySupplier[item.supplier_id] || 0) + 1;
       }
     });
 
-    return { byCategory, bySupplier, total: state.items.filter(i => i.status === 'active').length };
+    const inactiveCount = state.items.filter(i => i.status === 'inactive' || i.status === 'sold_out').length;
+
+    return {
+      byCategory,
+      bySupplier,
+      total: state.items.filter(i => i.status === 'active').length,
+      inactiveCount,
+    };
   }, [state.items]);
 
   const handleEditItem = (item: Item) => {
@@ -598,6 +650,49 @@ export default function MasterItemListScreen() {
       await updateItem(updatedItem);
       setShowEditModal(false);
       setEditingItem(null);
+    }
+  };
+
+  const handleDeleteItem = async (item: Item) => {
+    const confirmDelete = () => {
+      // Delete the item from database
+      supabase
+        .from('items')
+        .delete()
+        .eq('id', item.id)
+        .then(({ error }) => {
+          if (error) {
+            if (Platform.OS === 'web') {
+              window.alert('Error\n\nFailed to delete item. It may be referenced by orders.');
+            } else {
+              Alert.alert('Error', 'Failed to delete item. It may be referenced by orders.');
+            }
+          } else {
+            setShowEditModal(false);
+            setEditingItem(null);
+            loadAllData(); // Refresh the list
+            if (Platform.OS === 'web') {
+              window.alert('Deleted\n\nItem has been permanently deleted.');
+            } else {
+              Alert.alert('Deleted', 'Item has been permanently deleted.');
+            }
+          }
+        });
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Delete "${item.name}"?\n\nThis action cannot be undone. The item will be permanently removed.`)) {
+        confirmDelete();
+      }
+    } else {
+      Alert.alert(
+        'Delete Item',
+        `Are you sure you want to delete "${item.name}"? This action cannot be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: confirmDelete },
+        ]
+      );
     }
   };
 
@@ -782,19 +877,32 @@ export default function MasterItemListScreen() {
   // Render a single item card
   const renderItem = ({ item }: { item: Item }) => {
     const supplierName = getSupplierName(item.supplier_id);
+    // Check for actual image content (not empty strings)
+    const hasStoredImage = item.image_path && item.image_path.trim().length > 0;
+    const hasUrlImage = item.image_url && item.image_url.trim().length > 0;
+    const imageUri = hasStoredImage
+      ? supabase.storage.from('item-images').getPublicUrl(item.image_path!).data.publicUrl
+      : hasUrlImage
+        ? item.image_url
+        : null;
 
     return (
       <TouchableOpacity
-        style={styles.itemCard}
+        style={[styles.itemCard, item.status !== 'active' && styles.itemCardInactive]}
         onPress={() => handleEditItem(item)}
         activeOpacity={0.7}
       >
-        {/* Image */}
-        {item.image_url ? (
-          <Image source={{ uri: item.image_url }} style={styles.itemImage} />
-        ) : (
-          <View style={styles.itemImagePlaceholder}>
-            <Ionicons name="cube-outline" size={28} color={theme.colors.textMuted} />
+        {/* Image - only show if there is a valid image URI */}
+        {imageUri && (
+          <Image source={{ uri: imageUri }} style={styles.itemImage} />
+        )}
+
+        {/* Status badge for inactive items */}
+        {item.status !== 'active' && (
+          <View style={styles.inactiveItemBadge}>
+            <Text style={styles.inactiveItemBadgeText}>
+              {item.status === 'inactive' ? 'Inactive' : 'Sold Out'}
+            </Text>
           </View>
         )}
 
@@ -810,10 +918,27 @@ export default function MasterItemListScreen() {
           {item.size && <Text style={styles.itemUnit}> / {item.size}</Text>}
         </View>
 
-        {/* Category badge */}
-        <View style={styles.categoryBadge}>
-          <Text style={styles.categoryBadgeText}>{item.category}</Text>
-        </View>
+        {/* Category badges */}
+        {(() => {
+          const categories = item.categories && item.categories.length > 0
+            ? item.categories
+            : (item.category ? [item.category] : []);
+          if (categories.length === 0) return null;
+          return (
+            <View style={styles.categoryBadgeContainer}>
+              {categories.slice(0, 2).map((cat, idx) => (
+                <View key={idx} style={styles.categoryBadge}>
+                  <Text style={styles.categoryBadgeText}>{cat}</Text>
+                </View>
+              ))}
+              {categories.length > 2 && (
+                <View style={styles.categoryBadge}>
+                  <Text style={styles.categoryBadgeText}>+{categories.length - 2}</Text>
+                </View>
+              )}
+            </View>
+          );
+        })()}
       </TouchableOpacity>
     );
   };
@@ -846,6 +971,7 @@ export default function MasterItemListScreen() {
           onPress={handleOpenImport}
         >
           <Ionicons name="cloud-upload-outline" size={20} color={theme.colors.accent} />
+          <Text style={styles.importButtonText}>Import</Text>
         </TouchableOpacity>
 
         {/* Add button */}
@@ -957,6 +1083,26 @@ export default function MasterItemListScreen() {
         })}
       </ScrollView>
 
+      {/* Status filter (Active/Inactive) */}
+      <View style={styles.statusFilterRow}>
+        <TouchableOpacity
+          style={[styles.statusFilterButton, !showInactive && styles.statusFilterButtonActive]}
+          onPress={() => setShowInactive(false)}
+        >
+          <Text style={[styles.statusFilterText, !showInactive && styles.statusFilterTextActive]}>
+            Active ({itemStats.total})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.statusFilterButton, showInactive && styles.statusFilterButtonActive]}
+          onPress={() => setShowInactive(true)}
+        >
+          <Text style={[styles.statusFilterText, showInactive && styles.statusFilterTextActive]}>
+            Inactive ({itemStats.inactiveCount})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Results header */}
       <View style={styles.resultsHeader}>
         <Text style={styles.resultsCount}>
@@ -1018,6 +1164,7 @@ export default function MasterItemListScreen() {
           setIsCreatingNew(false);
         }}
         onSave={handleSaveItem}
+        onDelete={handleDeleteItem}
       />
 
       {/* AI Import Modal */}
@@ -1195,14 +1342,53 @@ const styles = StyleSheet.create({
     ...theme.shadow.sm,
   },
 
+  // Inactive toggle
+  inactiveToggle: {
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    position: 'relative',
+    ...theme.shadow.sm,
+  },
+  inactiveToggleActive: {
+    backgroundColor: theme.colors.textMuted,
+    borderColor: theme.colors.textMuted,
+  },
+  inactiveBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: theme.colors.warning,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  inactiveBadgeText: {
+    color: theme.colors.white,
+    fontSize: 10,
+    fontWeight: theme.fontWeight.bold,
+  },
   // Import button
   importButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: theme.spacing.md,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.lg,
     borderWidth: 1,
     borderColor: theme.colors.accent,
+    gap: theme.spacing.xs,
     ...theme.shadow.sm,
+  },
+  importButtonText: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.accent,
   },
   // Add button
   addButton: {
@@ -1263,13 +1449,16 @@ const styles = StyleSheet.create({
   // Supplier chips
   supplierChipsScroll: {
     flexGrow: 0,
+    flexShrink: 0,
     marginBottom: theme.spacing.sm,
+    minHeight: 48,
   },
   supplierChipsContainer: {
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.xs,
+    paddingVertical: theme.spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 48,
   },
   supplierChip: {
     flexDirection: 'row',
@@ -1282,6 +1471,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     marginRight: theme.spacing.sm,
     minHeight: 36,
+    height: 36,
   },
   supplierChipActive: {
     backgroundColor: theme.colors.primary,
@@ -1302,13 +1492,16 @@ const styles = StyleSheet.create({
   // Category pills
   categoryPillsScroll: {
     flexGrow: 0,
+    flexShrink: 0,
     marginBottom: theme.spacing.md,
+    minHeight: 48,
   },
   categoryPillsContainer: {
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.xs,
+    paddingVertical: theme.spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 48,
   },
   categoryPill: {
     paddingHorizontal: theme.spacing.md,
@@ -1319,6 +1512,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     marginRight: theme.spacing.sm,
     minHeight: 36,
+    height: 36,
     justifyContent: 'center',
   },
   categoryPillActive: {
@@ -1331,6 +1525,37 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
   },
   categoryPillTextActive: {
+    color: theme.colors.white,
+    fontWeight: theme.fontWeight.semibold,
+  },
+
+  // Status filter row
+  statusFilterRow: {
+    flexDirection: 'row',
+    paddingHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    gap: theme.spacing.sm,
+  },
+  statusFilterButton: {
+    flex: 1,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+  },
+  statusFilterButtonActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  statusFilterText: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.text,
+  },
+  statusFilterTextActive: {
     color: theme.colors.white,
     fontWeight: theme.fontWeight.semibold,
   },
@@ -1396,6 +1621,26 @@ const styles = StyleSheet.create({
     padding: theme.spacing.sm,
     ...theme.shadow.sm,
   },
+  itemCardInactive: {
+    opacity: 0.7,
+    backgroundColor: theme.colors.surfaceHover,
+  },
+  inactiveItemBadge: {
+    position: 'absolute',
+    top: theme.spacing.xs,
+    right: theme.spacing.xs,
+    backgroundColor: theme.colors.warning,
+    paddingHorizontal: theme.spacing.xs,
+    paddingVertical: 2,
+    borderRadius: theme.borderRadius.sm,
+    zIndex: 1,
+  },
+  inactiveItemBadgeText: {
+    fontSize: 9,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.white,
+    textTransform: 'uppercase',
+  },
   itemImage: {
     width: '100%',
     height: 100,
@@ -1438,10 +1683,14 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.xs,
     color: theme.colors.textMuted,
   },
+  categoryBadgeContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
   categoryBadge: {
-    alignSelf: 'flex-start',
     backgroundColor: theme.colors.surfaceHover,
-    paddingHorizontal: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.xs,
     paddingVertical: 2,
     borderRadius: theme.borderRadius.sm,
   },
@@ -1633,6 +1882,42 @@ const styles = StyleSheet.create({
     color: theme.colors.white,
     fontWeight: theme.fontWeight.semibold,
   },
+  inputHint: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+    marginBottom: theme.spacing.sm,
+  },
+  categoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.xs,
+    marginBottom: theme.spacing.md,
+  },
+  categoryGridOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  categoryGridOptionActive: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+  },
+  categoryGridOptionText: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.text,
+  },
+  categoryGridOptionTextActive: {
+    color: theme.colors.white,
+    fontWeight: theme.fontWeight.semibold,
+  },
+  categoryCheckIcon: {
+    marginRight: 4,
+  },
   modalFooter: {
     flexDirection: 'row',
     padding: theme.spacing.lg,
@@ -1640,6 +1925,15 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
     gap: theme.spacing.sm,
+  },
+  deleteButton: {
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cancelButton: {
     flex: 1,

@@ -201,14 +201,6 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
       setError('Contact phone is required.');
       return;
     }
-    if (!contactEmail.trim()) {
-      setError('Contact email is required.');
-      return;
-    }
-    if (!accountsEmail.trim()) {
-      setError('Accounts email is required.');
-      return;
-    }
     if (!deliveryAddress.trim()) {
       setError('Delivery address is required.');
       return;
@@ -499,7 +491,7 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
 
               {/* Contact Email */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Contact Email *</Text>
+                <Text style={styles.label}>Contact Email</Text>
                 <TextInput
                   style={styles.textInput}
                   placeholder="Primary contact email"
@@ -514,7 +506,7 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
 
               {/* Accounts Email */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Accounts Email *</Text>
+                <Text style={styles.label}>Accounts Email</Text>
                 <TextInput
                   style={styles.textInput}
                   placeholder="Email for invoices"

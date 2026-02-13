@@ -310,7 +310,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       let query = supabase
         .from('items')
         .select('*')
-        .eq('status', 'active')
         .order('name')
         .range(from, to);
 
@@ -554,6 +553,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       .update({
         name: item.name,
         category: item.category,
+        categories: item.categories || [],
         country_of_origin: item.country_of_origin,
         size: item.size,
         carton_size: item.carton_size,
@@ -588,6 +588,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         name: item.name,
         supplier_id: item.supplier_id,
         category: item.category,
+        categories: item.categories || [],
         country_of_origin: item.country_of_origin,
         size: item.size,
         carton_size: item.carton_size,
@@ -745,6 +746,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         // Mark as export_failed so it shows in the list with retry option
         await supabase.from('invoices').update({
           status: 'export_failed',
+          export_error: 'Xero is not connected. Please connect Xero in Settings first.',
         }).eq('id', invoiceId);
         await loadInvoices();
         return;
@@ -757,6 +759,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
       if (result.success) {
         console.log('Invoice synced to Xero:', result.xero_invoice_id);
+        // Clear any previous export error on success
+        await supabase.from('invoices').update({
+          export_error: null,
+        }).eq('id', invoiceId);
         // Wait 5 seconds then reload invoices to get updated data from database
         setTimeout(async () => {
           console.log('Reloading invoices after Xero sync...');
@@ -764,18 +770,21 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         }, 5000);
       } else {
         console.warn('Failed to sync invoice to Xero:', result.error);
-        // Mark as export failed in database
+        // Mark as export failed in database with error message
         await supabase.from('invoices').update({
           status: 'export_failed',
+          export_error: result.error || 'Unknown error occurred during Xero export',
         }).eq('id', invoiceId);
         // Reload to reflect the failed status
         await loadInvoices();
       }
     } catch (error) {
       console.error('Error syncing to Xero:', error);
-      // Mark as export failed on error
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      // Mark as export failed on error with message
       await supabase.from('invoices').update({
         status: 'export_failed',
+        export_error: errorMessage,
       }).eq('id', invoiceId);
       await loadInvoices();
     }
@@ -924,6 +933,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
   // Approve order and generate invoice in one transaction
   const approveOrderWithInvoice = async (orderId: string, approverId: string): Promise<{ order: Order; invoice: Invoice } | null> => {
+    // Get the order first
+    const order = state.orders.find((o) => o.id === orderId);
+    if (!order) {
+      console.error('Order not found:', orderId);
+      throw new Error('Order not found');
+    }
+
     // First update the order status to approved
     const updateData = {
       status: 'approved' as OrderStatus,
@@ -938,14 +954,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     if (error) {
       console.error('Error approving order:', error);
-      return null;
-    }
-
-    // Get the full order with items for invoice generation
-    const order = state.orders.find((o) => o.id === orderId);
-    if (!order) {
-      console.error('Order not found:', orderId);
-      return null;
+      throw new Error('Failed to approve order in database');
     }
 
     const approvedOrder = { ...order, ...updateData };
@@ -958,6 +967,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       // Order is approved but invoice failed - still return the order
       return { order: approvedOrder, invoice: null as any };
     }
+
+    // Reload invoices to ensure the new invoice appears in the list
+    await loadInvoices();
 
     // Sync to Xero (non-blocking)
     syncInvoiceToXero(orderId, invoice.id);
@@ -976,20 +988,28 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     // Use the Xero service to create the invoice
     const result = await createXeroInvoice(invoice.order_id, invoiceId);
     if (!result.success) {
-      console.error('Failed to export to Xero:', result.error);
-      // Mark as export failed
+      const errorMessage = result.error || 'Failed to export to Xero';
+      console.error('Failed to export to Xero:', errorMessage);
+      // Mark as export failed with error message
       dispatch({
         type: 'UPDATE_INVOICE',
         payload: {
           ...invoice,
           status: 'export_failed',
+          export_error: errorMessage,
         },
       });
       await supabase.from('invoices').update({
         status: 'export_failed',
+        export_error: errorMessage,
       }).eq('id', invoiceId);
-      throw new Error(result.error || 'Failed to export to Xero');
+      throw new Error(errorMessage);
     }
+
+    // Clear any previous export error on success
+    await supabase.from('invoices').update({
+      export_error: null,
+    }).eq('id', invoiceId);
 
     // Reload invoices from database to get latest data (including pdf_storage_path set by Edge Function)
     await loadInvoices();

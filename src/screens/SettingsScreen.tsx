@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
@@ -17,7 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import { useOrders } from '../context/OrderContext';
 import { supabase } from '../lib/supabase';
 import { checkXeroConnection, connectXero, disconnectXero } from '../services/xero';
-import { checkGmailConnection, connectGmail, disconnectGmail, updateGmailFilters, GmailConnectionStatus } from '../services/gmail';
+import { checkGmailConnection, connectGmail, disconnectGmail, updateGmailFilters, getGmailLabels, GmailConnectionStatus, GmailLabel } from '../services/gmail';
 import BusinessSwitcher from '../components/BusinessSwitcher';
 
 export default function SettingsScreen() {
@@ -41,9 +42,12 @@ export default function SettingsScreen() {
   const [checkingGmail, setCheckingGmail] = useState(true);
   const [showGmailFilterModal, setShowGmailFilterModal] = useState(false);
   const [gmailFilterSender, setGmailFilterSender] = useState('');
+  const [gmailFilterTo, setGmailFilterTo] = useState('');
   const [gmailFilterSubject, setGmailFilterSubject] = useState('');
   const [gmailFilterLabel, setGmailFilterLabel] = useState('INBOX');
   const [savingGmailFilters, setSavingGmailFilters] = useState(false);
+  const [gmailLabels, setGmailLabels] = useState<GmailLabel[]>([]);
+  const [loadingLabels, setLoadingLabels] = useState(false);
 
   // Check for Gmail OAuth callback params (web only)
   useEffect(() => {
@@ -181,11 +185,22 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleOpenGmailFilters = () => {
+  const handleOpenGmailFilters = async () => {
     setGmailFilterSender(gmailStatus.filterSender || '');
+    setGmailFilterTo(gmailStatus.filterTo || '');
     setGmailFilterSubject(gmailStatus.filterSubject || '');
     setGmailFilterLabel(gmailStatus.filterLabel || 'INBOX');
     setShowGmailFilterModal(true);
+
+    // Fetch labels
+    if (tenant?.id) {
+      setLoadingLabels(true);
+      const result = await getGmailLabels(tenant.id);
+      if (result.labels.length > 0) {
+        setGmailLabels(result.labels);
+      }
+      setLoadingLabels(false);
+    }
   };
 
   const handleSaveGmailFilters = async () => {
@@ -194,6 +209,7 @@ export default function SettingsScreen() {
     try {
       const result = await updateGmailFilters(tenant.id, {
         filterSender: gmailFilterSender.trim() || undefined,
+        filterTo: gmailFilterTo.trim() || undefined,
         filterSubject: gmailFilterSubject.trim() || undefined,
         filterLabel: gmailFilterLabel.trim() || 'INBOX',
       });
@@ -242,18 +258,25 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleSignOut = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          setSigningOut(true);
-          await signOut();
+  const handleSignOut = async () => {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to sign out?')) {
+        setSigningOut(true);
+        await signOut();
+      }
+    } else {
+      Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            setSigningOut(true);
+            await signOut();
+          },
         },
-      },
-    ]);
+      ]);
+    }
   };
 
   const handleInviteUser = async () => {
@@ -377,7 +400,7 @@ export default function SettingsScreen() {
               <Text style={styles.alertTitle}>
                 {stats.pendingApprovals} order{stats.pendingApprovals !== 1 ? 's' : ''} awaiting approval
               </Text>
-              <Text style={styles.alertSubtitle}>Review in the Approvals tab</Text>
+              <Text style={styles.alertSubtitle}>Review in the Orders tab</Text>
             </View>
           </View>
         </View>
@@ -561,6 +584,12 @@ export default function SettingsScreen() {
                       </Text>
                     </View>
                     <View style={styles.gmailFilterRow}>
+                      <Text style={styles.gmailFilterLabel}>To:</Text>
+                      <Text style={styles.gmailFilterValue}>
+                        {gmailStatus.filterTo || 'Any recipient'}
+                      </Text>
+                    </View>
+                    <View style={styles.gmailFilterRow}>
                       <Text style={styles.gmailFilterLabel}>Subject:</Text>
                       <Text style={styles.gmailFilterValue}>
                         {gmailStatus.filterSubject || 'Any subject'}
@@ -723,7 +752,7 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalBody}>
+            <ScrollView style={styles.modalBody}>
               <Text style={styles.inputLabel}>From (Sender Email)</Text>
               <TextInput
                 style={styles.textInput}
@@ -737,6 +766,19 @@ export default function SettingsScreen() {
               />
               <Text style={styles.filterHint}>Only process emails from this sender</Text>
 
+              <Text style={styles.inputLabel}>To (Recipient Email)</Text>
+              <TextInput
+                style={styles.textInput}
+                value={gmailFilterTo}
+                onChangeText={setGmailFilterTo}
+                placeholder="e.g. orders@mybusiness.com"
+                placeholderTextColor={theme.colors.textMuted}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Text style={styles.filterHint}>Only process emails sent to this address</Text>
+
               <Text style={styles.inputLabel}>Subject Contains</Text>
               <TextInput
                 style={styles.textInput}
@@ -748,17 +790,46 @@ export default function SettingsScreen() {
               />
               <Text style={styles.filterHint}>Only process emails with this text in subject</Text>
 
-              <Text style={styles.inputLabel}>Gmail Label/Folder</Text>
-              <TextInput
-                style={styles.textInput}
-                value={gmailFilterLabel}
-                onChangeText={setGmailFilterLabel}
-                placeholder="INBOX"
-                placeholderTextColor={theme.colors.textMuted}
-                autoCapitalize="none"
-              />
-              <Text style={styles.filterHint}>Gmail label to search (e.g. INBOX, Orders)</Text>
-            </View>
+              <Text style={styles.inputLabel}>Gmail Folder/Label</Text>
+              {loadingLabels ? (
+                <View style={styles.labelLoadingContainer}>
+                  <ActivityIndicator size="small" color={theme.colors.accent} />
+                  <Text style={styles.labelLoadingText}>Loading labels...</Text>
+                </View>
+              ) : gmailLabels.length > 0 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.labelScrollView}>
+                  {gmailLabels.map((label) => (
+                    <TouchableOpacity
+                      key={label.id}
+                      style={[
+                        styles.labelChip,
+                        gmailFilterLabel === label.id && styles.labelChipActive,
+                      ]}
+                      onPress={() => setGmailFilterLabel(label.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.labelChipText,
+                          gmailFilterLabel === label.id && styles.labelChipTextActive,
+                        ]}
+                      >
+                        {label.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              ) : (
+                <TextInput
+                  style={styles.textInput}
+                  value={gmailFilterLabel}
+                  onChangeText={setGmailFilterLabel}
+                  placeholder="INBOX"
+                  placeholderTextColor={theme.colors.textMuted}
+                  autoCapitalize="none"
+                />
+              )}
+              <Text style={styles.filterHint}>Select which folder/label to search for emails</Text>
+            </ScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
@@ -1088,6 +1159,42 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     marginTop: 4,
     marginBottom: theme.spacing.sm,
+  },
+  labelLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.md,
+    gap: theme.spacing.sm,
+  },
+  labelLoadingText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textMuted,
+  },
+  labelScrollView: {
+    marginVertical: theme.spacing.xs,
+  },
+  labelChip: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginRight: theme.spacing.sm,
+  },
+  labelChipActive: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+  },
+  labelChipText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.text,
+  },
+  labelChipTextActive: {
+    color: theme.colors.white,
+    fontWeight: theme.fontWeight.semibold,
   },
   gmailFilterSection: {
     padding: theme.spacing.md,

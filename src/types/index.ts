@@ -96,6 +96,7 @@ export interface Item {
   sku?: string;
   name: string;
   category?: string;
+  categories?: string[]; // Multi-category support
   country_of_origin?: string;
   size?: string;
   carton_size?: number;
@@ -152,6 +153,7 @@ export interface Order {
   id: string;
   tenant_id: string;
   supplier_id: string;
+  customer_id?: string;
   location_id?: string;
   order_number?: string;
   order_date: string;
@@ -193,6 +195,8 @@ export interface Invoice {
   xero_invoice_id?: string;
   exported_at?: string;
   pdf_storage_path?: string;
+  export_error?: string;
+  is_archived?: boolean;
   notes?: string;
   created_at?: string;
   updated_at?: string;

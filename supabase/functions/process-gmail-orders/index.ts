@@ -352,7 +352,13 @@ serve(async (req) => {
         } else {
           const errorMsg = processResult.error || processResult.details || `HTTP ${processResponse.status}`
           console.log(`FAILED: ${errorMsg}`)
-          results.push({ messageId, success: false, error: errorMsg })
+          if (processResult.stack) {
+            console.log(`Stack: ${processResult.stack}`)
+          }
+          if (processResult.details) {
+            console.log(`Details: ${processResult.details}`)
+          }
+          results.push({ messageId, success: false, error: errorMsg, details: processResult.details })
         }
       }
 
