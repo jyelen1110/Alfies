@@ -15,7 +15,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { useAuth } from '../context/AuthContext';
-import { useOrders } from '../context/OrderContext';
 import { supabase } from '../lib/supabase';
 import { checkXeroConnection, connectXero, disconnectXero } from '../services/xero';
 import { checkGmailConnection, connectGmail, disconnectGmail, updateGmailFilters, getGmailLabels, GmailConnectionStatus, GmailLabel } from '../services/gmail';
@@ -23,7 +22,6 @@ import BusinessSwitcher from '../components/BusinessSwitcher';
 
 export default function SettingsScreen() {
   const { user, tenant, signOut, isOwner, isMaster } = useAuth();
-  const { state } = useOrders();
   const [signingOut, setSigningOut] = useState(false);
 
   // Xero connection state
@@ -275,14 +273,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const stats = {
-    suppliers: state.suppliers.length,
-    items: state.items.length,
-    orders: state.orders.length,
-    invoices: state.invoices.length,
-    pendingApprovals: state.orders.filter((o) => o.status === 'pending_approval').length,
-  };
-
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Profile Section */}
@@ -316,48 +306,6 @@ export default function SettingsScreen() {
 
       {/* Business Switcher for Master Users */}
       <BusinessSwitcher />
-
-      {/* Stats Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Overview</Text>
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Ionicons name="storefront-outline" size={24} color={theme.colors.accent} />
-            <Text style={styles.statValue}>{stats.suppliers}</Text>
-            <Text style={styles.statLabel}>Suppliers</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Ionicons name="cube-outline" size={24} color={theme.colors.info} />
-            <Text style={styles.statValue}>{stats.items}</Text>
-            <Text style={styles.statLabel}>Items</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Ionicons name="receipt-outline" size={24} color={theme.colors.success} />
-            <Text style={styles.statValue}>{stats.orders}</Text>
-            <Text style={styles.statLabel}>Orders</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Ionicons name="document-text-outline" size={24} color={theme.colors.warning} />
-            <Text style={styles.statValue}>{stats.invoices}</Text>
-            <Text style={styles.statLabel}>Invoices</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Pending Approvals */}
-      {isOwner() && stats.pendingApprovals > 0 && (
-        <View style={styles.section}>
-          <View style={styles.alertCard}>
-            <Ionicons name="time" size={24} color={theme.colors.warning} />
-            <View style={styles.alertInfo}>
-              <Text style={styles.alertTitle}>
-                {stats.pendingApprovals} order{stats.pendingApprovals !== 1 ? 's' : ''} awaiting approval
-              </Text>
-              <Text style={styles.alertSubtitle}>Review in the Orders tab</Text>
-            </View>
-          </View>
-        </View>
-      )}
 
       {/* Account Section */}
       <View style={styles.section}>
@@ -788,54 +736,6 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     marginBottom: theme.spacing.sm,
     marginLeft: theme.spacing.xs,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: theme.spacing.sm,
-  },
-  statCard: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.md,
-    alignItems: 'center',
-    ...theme.shadow.sm,
-  },
-  statValue: {
-    fontSize: theme.fontSize.xxl,
-    fontWeight: theme.fontWeight.bold,
-    color: theme.colors.text,
-    marginTop: theme.spacing.xs,
-  },
-  statLabel: {
-    fontSize: theme.fontSize.xs,
-    color: theme.colors.textMuted,
-    marginTop: 2,
-  },
-  alertCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.warning + '15',
-    borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.md,
-    gap: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.warning + '30',
-  },
-  alertInfo: {
-    flex: 1,
-  },
-  alertTitle: {
-    fontSize: theme.fontSize.md,
-    fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.text,
-  },
-  alertSubtitle: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
   },
   menuCard: {
     backgroundColor: theme.colors.surface,
