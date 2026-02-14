@@ -40,13 +40,18 @@ export function getSupabaseAdmin() {
   );
 }
 
-export async function refreshXeroToken(refreshToken: string): Promise<XeroTokens | null> {
+export interface XeroTokenResult {
+  success: boolean;
+  tokens?: XeroTokens;
+  error?: string;
+}
+
+export async function refreshXeroToken(refreshToken: string): Promise<XeroTokenResult> {
   const clientId = Deno.env.get('XERO_CLIENT_ID');
   const clientSecret = Deno.env.get('XERO_CLIENT_SECRET');
 
   if (!clientId || !clientSecret) {
-    console.error('Xero credentials not configured');
-    return null;
+    return { success: false, error: 'Xero credentials not configured on server' };
   }
 
   const response = await fetch(XERO_TOKEN_URL, {
@@ -62,14 +67,36 @@ export async function refreshXeroToken(refreshToken: string): Promise<XeroTokens
   });
 
   if (!response.ok) {
-    console.error('Failed to refresh Xero token:', await response.text());
-    return null;
+    const errorText = await response.text();
+    console.error('Failed to refresh Xero token:', errorText);
+
+    // Parse error message
+    let errorMessage = 'Failed to refresh Xero token';
+    try {
+      const errorJson = JSON.parse(errorText);
+      errorMessage = errorJson.error_description || errorJson.error || errorMessage;
+    } catch {
+      // Use raw text if not JSON
+      if (errorText.length < 200) {
+        errorMessage = errorText;
+      }
+    }
+
+    return { success: false, error: `Xero token expired: ${errorMessage}. Please reconnect Xero in Settings.` };
   }
 
-  return response.json();
+  const tokens = await response.json();
+  return { success: true, tokens };
 }
 
-export async function getValidXeroToken(userId: string): Promise<{ accessToken: string; xeroTenantId: string } | null> {
+export interface XeroTokenData {
+  success: boolean;
+  accessToken?: string;
+  xeroTenantId?: string;
+  error?: string;
+}
+
+export async function getValidXeroToken(userId: string): Promise<XeroTokenData> {
   const supabase = getSupabaseAdmin();
 
   // Get stored tokens by user_id (user-based integrations)
@@ -82,7 +109,7 @@ export async function getValidXeroToken(userId: string): Promise<{ accessToken: 
 
   if (error || !tokenData) {
     console.error('No Xero token found for user:', userId);
-    return null;
+    return { success: false, error: 'Xero is not connected. Please connect Xero in Settings.' };
   }
 
   // Check if token is expired (with 5 min buffer)
@@ -92,34 +119,36 @@ export async function getValidXeroToken(userId: string): Promise<{ accessToken: 
 
   if (expiresAt.getTime() - bufferMs < now.getTime()) {
     // Token expired, refresh it
-    const newTokens = await refreshXeroToken(tokenData.refresh_token);
-    if (!newTokens) {
-      return null;
+    const refreshResult = await refreshXeroToken(tokenData.refresh_token);
+    if (!refreshResult.success || !refreshResult.tokens) {
+      return { success: false, error: refreshResult.error || 'Failed to refresh Xero token' };
     }
 
     // Update stored tokens
     const { error: updateError } = await supabase
       .from('integration_tokens')
       .update({
-        access_token: newTokens.access_token,
-        refresh_token: newTokens.refresh_token,
-        token_expires_at: new Date(Date.now() + newTokens.expires_in * 1000).toISOString(),
+        access_token: refreshResult.tokens.access_token,
+        refresh_token: refreshResult.tokens.refresh_token,
+        token_expires_at: new Date(Date.now() + refreshResult.tokens.expires_in * 1000).toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq('id', tokenData.id);
 
     if (updateError) {
       console.error('Failed to update Xero tokens:', updateError);
-      return null;
+      return { success: false, error: 'Failed to save refreshed Xero token' };
     }
 
     return {
-      accessToken: newTokens.access_token,
+      success: true,
+      accessToken: refreshResult.tokens.access_token,
       xeroTenantId: tokenData.xero_tenant_id,
     };
   }
 
   return {
+    success: true,
     accessToken: tokenData.access_token,
     xeroTenantId: tokenData.xero_tenant_id,
   };

@@ -88,15 +88,18 @@ serve(async (req) => {
 
     // Get valid Xero token (user-based integrations)
     console.log('Fetching Xero token for user:', user.id);
-    const tokenData = await getValidXeroToken(user.id);
-    if (!tokenData) {
-      console.error('ERROR: Xero not connected for user', user.id);
-      return new Response(JSON.stringify({ error: 'Xero not connected. Please connect your Xero account in Settings.', code: 'XERO_NOT_CONNECTED' }), {
+    const tokenResult = await getValidXeroToken(user.id);
+    if (!tokenResult.success || !tokenResult.accessToken) {
+      console.error('ERROR: Xero token error for user', user.id, '-', tokenResult.error);
+      return new Response(JSON.stringify({
+        error: tokenResult.error || 'Xero not connected. Please connect your Xero account in Settings.',
+        code: 'XERO_NOT_CONNECTED'
+      }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    console.log('Xero token retrieved, Xero Tenant ID:', tokenData.xeroTenantId);
+    console.log('Xero token retrieved, Xero Tenant ID:', tokenResult.xeroTenantId);
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -308,8 +311,8 @@ serve(async (req) => {
     const xeroResponse = await fetch(`${XERO_API_URL}/Invoices`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${tokenData.accessToken}`,
-        'Xero-Tenant-Id': tokenData.xeroTenantId,
+        Authorization: `Bearer ${tokenResult.accessToken}`,
+        'Xero-Tenant-Id': tokenResult.xeroTenantId,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
@@ -420,8 +423,8 @@ serve(async (req) => {
     const verifyResponse = await fetch(`${XERO_API_URL}/Invoices/${createdInvoice.InvoiceID}`, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${tokenData.accessToken}`,
-        'Xero-Tenant-Id': tokenData.xeroTenantId,
+        Authorization: `Bearer ${tokenResult.accessToken}`,
+        'Xero-Tenant-Id': tokenResult.xeroTenantId,
         Accept: 'application/json',
       },
     });
@@ -461,8 +464,8 @@ serve(async (req) => {
       const pdfResponse = await fetch(`${XERO_API_URL}/Invoices/${createdInvoice.InvoiceID}`, {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${tokenData.accessToken}`,
-          'Xero-Tenant-Id': tokenData.xeroTenantId,
+          Authorization: `Bearer ${tokenResult.accessToken}`,
+          'Xero-Tenant-Id': tokenResult.xeroTenantId,
           Accept: 'application/pdf',
         },
       });
