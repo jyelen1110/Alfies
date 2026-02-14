@@ -53,25 +53,45 @@ export default function ItemTableScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [draggedColumnIndex, setDraggedColumnIndex] = useState<number | null>(null);
+  const [displayLimit, setDisplayLimit] = useState(50);
   const inputRef = useRef<TextInput>(null);
 
+  const ITEMS_PER_PAGE = 50;
   const screenWidth = Dimensions.get('window').width;
 
   const visibleColumns = useMemo(() => columns.filter(col => col.visible), [columns]);
   const totalColumnWidth = useMemo(() => visibleColumns.reduce((sum, col) => sum + col.width, 0), [visibleColumns]);
 
-  // Filter items based on search - limit to first 100 for performance
-  const filteredItems = useMemo(() => {
+  // Filter all items based on search
+  const allFilteredItems = useMemo(() => {
     const activeItems = state.items.filter(i => i.status === 'active');
-    if (!searchQuery) return activeItems.slice(0, 100);
+    if (!searchQuery) return activeItems;
     const query = searchQuery.toLowerCase();
     return activeItems.filter(
       (item) =>
         item.name.toLowerCase().includes(query) ||
         item.category?.toLowerCase().includes(query) ||
         item.barcode?.toLowerCase().includes(query)
-    ).slice(0, 100);
+    );
   }, [state.items, searchQuery]);
+
+  // Apply pagination limit
+  const filteredItems = useMemo(() => {
+    return allFilteredItems.slice(0, displayLimit);
+  }, [allFilteredItems, displayLimit]);
+
+  const hasMoreItems = allFilteredItems.length > displayLimit;
+  const totalItemCount = allFilteredItems.length;
+
+  const handleLoadMore = () => {
+    setDisplayLimit(prev => prev + ITEMS_PER_PAGE);
+  };
+
+  // Reset display limit when search changes
+  const handleSearchChange = (text: string) => {
+    setSearchQuery(text);
+    setDisplayLimit(ITEMS_PER_PAGE);
+  };
 
   const handleCellPress = (item: Item, column: Column) => {
     if (!column.editable) return;
@@ -202,11 +222,14 @@ export default function ItemTableScreen() {
           style={styles.searchInput}
           placeholder="Search items..."
           value={searchQuery}
-          onChangeText={setSearchQuery}
+          onChangeText={handleSearchChange}
           placeholderTextColor={theme.colors.textMuted}
         />
+        <Text style={styles.itemCount}>
+          {filteredItems.length}{hasMoreItems ? `/${totalItemCount}` : ''} items
+        </Text>
         {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
+          <TouchableOpacity onPress={() => handleSearchChange('')}>
             <Ionicons name="close-circle" size={20} color={theme.colors.textMuted} />
           </TouchableOpacity>
         )}
@@ -304,6 +327,16 @@ export default function ItemTableScreen() {
               </View>
             ))}
           </ScrollView>
+
+          {/* Load More Button */}
+          {hasMoreItems && (
+            <TouchableOpacity style={styles.loadMoreButton} onPress={handleLoadMore}>
+              <Text style={styles.loadMoreText}>
+                Load More ({totalItemCount - filteredItems.length} remaining)
+              </Text>
+              <Ionicons name="chevron-down" size={18} color={theme.colors.primary} />
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 
@@ -398,6 +431,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.sm,
     fontSize: theme.fontSize.md,
     color: theme.colors.text,
+  },
+  itemCount: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textMuted,
+    marginRight: theme.spacing.sm,
+  },
+  loadMoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: theme.spacing.md,
+    marginVertical: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceHover,
+    borderRadius: theme.borderRadius.md,
+    gap: theme.spacing.xs,
+  },
+  loadMoreText: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.primary,
+    fontWeight: theme.fontWeight.medium,
   },
   instructions: {
     flexDirection: 'row',
