@@ -622,13 +622,13 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'theme.colors.primary',
+    backgroundColor: theme.colors.primary,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'theme.colors.primary',
+    backgroundColor: theme.colors.primary,
     gap: theme.spacing.md,
   },
   loadingText: {
@@ -656,7 +656,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.xl,
   },
   backButton: {
-    backgroundColor: 'theme.colors.primary',
+    backgroundColor: theme.colors.primary,
     paddingHorizontal: theme.spacing.xl,
     paddingVertical: theme.spacing.md,
     borderRadius: theme.borderRadius.lg,
@@ -838,7 +838,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.spacing.sm,
-    backgroundColor: 'theme.colors.primary',
+    backgroundColor: theme.colors.primary,
     borderRadius: theme.borderRadius.lg,
     paddingVertical: 14,
     marginTop: theme.spacing.sm,
@@ -866,6 +866,6 @@ const styles = StyleSheet.create({
   },
   loginLinkBold: {
     fontWeight: theme.fontWeight.semibold,
-    color: 'theme.colors.primary',
+    color: theme.colors.primary,
   },
 });

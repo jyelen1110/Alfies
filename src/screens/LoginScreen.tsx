@@ -162,7 +162,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'theme.colors.primary',
+    backgroundColor: theme.colors.primary,
   },
   scrollContent: {
     flexGrow: 1,
@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
   signInButtonText: {
     fontSize: theme.fontSize.md,
     fontWeight: theme.fontWeight.bold,
-    color: 'theme.colors.primary',
+    color: theme.colors.primary,
     letterSpacing: 0.5,
   },
   registerLink: {
@@ -272,6 +272,6 @@ const styles = StyleSheet.create({
   },
   registerLinkBold: {
     fontWeight: theme.fontWeight.semibold,
-    color: 'theme.colors.primary',
+    color: theme.colors.primary,
   },
 });
