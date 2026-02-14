@@ -65,7 +65,6 @@ type RoleOption = 'owner' | 'user';
 
 export default function UserListScreen() {
   const { user: currentUser, tenant, isMaster } = useAuth();
-  const supabaseUrl = 'https://cijgmmckafmfmmlpvgyi.supabase.co';
 
   const [users, setUsers] = useState<User[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -309,23 +308,20 @@ export default function UserListScreen() {
 
       setInviting(true);
       try {
-        const response = await fetch(`${supabaseUrl}/functions/v1/create-business`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
+        const { data: result, error: fnError } = await supabase.functions.invoke('create-business', {
+          body: {
             businessName: inviteBusinessName.trim(),
             ownerEmail: inviteEmail.trim().toLowerCase(),
             ownerName: inviteOwnerName.trim(),
             invitedBy: currentUser?.id,
-          }),
+          },
         });
 
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(result.error || 'Failed to create business');
+        if (fnError) {
+          throw new Error(fnError.message || 'Failed to create business');
+        }
+        if (result?.error) {
+          throw new Error(result.error);
         }
 
         setInviteModalVisible(false);
