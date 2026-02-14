@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { supabase } from '../lib/supabase';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 interface PasswordValidation {
   minLength: boolean;
@@ -546,16 +547,13 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
               </View>
 
               {/* Delivery Address */}
-              <View style={styles.inputGroup}>
+              <View style={[styles.inputGroup, styles.addressGroup]}>
                 <Text style={styles.label}>Delivery Address *</Text>
-                <TextInput
-                  style={[styles.textInput, styles.textArea]}
-                  placeholder="Full delivery address"
-                  placeholderTextColor={theme.colors.textMuted}
+                <AddressAutocomplete
                   value={deliveryAddress}
                   onChangeText={setDeliveryAddress}
-                  multiline
-                  numberOfLines={3}
+                  onAddressSelect={(address) => setDeliveryAddress(address)}
+                  placeholder="Start typing your delivery address..."
                   editable={!isLoading}
                 />
               </View>
@@ -734,6 +732,9 @@ const styles = StyleSheet.create({
   },
   inputGroup: {
     marginBottom: theme.spacing.md,
+  },
+  addressGroup: {
+    zIndex: 1000,
   },
   label: {
     fontSize: theme.fontSize.sm,
