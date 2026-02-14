@@ -25,10 +25,6 @@ export default function SettingsScreen() {
   const { user, tenant, signOut, isOwner, isMaster } = useAuth();
   const { state } = useOrders();
   const [signingOut, setSigningOut] = useState(false);
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteName, setInviteName] = useState('');
-  const [inviting, setInviting] = useState(false);
 
   // Xero connection state
   const [xeroConnected, setXeroConnected] = useState(false);
@@ -279,59 +275,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleInviteUser = async () => {
-    if (!inviteEmail.trim()) {
-      Alert.alert('Error', 'Please enter an email address');
-      return;
-    }
-    if (!inviteName.trim()) {
-      Alert.alert('Error', 'Please enter a name for the user');
-      return;
-    }
-
-    setInviting(true);
-    try {
-      // Create a pending invitation in the database
-      // Set expiry to 30 days from now
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 30);
-
-      // Generate a simple token
-      const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
-
-      const { error } = await supabase.from('user_invitations').insert({
-        tenant_id: user?.tenant_id,
-        email: inviteEmail.trim().toLowerCase(),
-        full_name: inviteName.trim(),
-        invited_by: user?.id,
-        status: 'pending',
-        role: 'user',
-        token: token,
-        expires_at: expiresAt.toISOString(),
-      });
-
-      if (error) {
-        if (error.code === '23505') {
-          Alert.alert('Error', 'An invitation has already been sent to this email address');
-        } else {
-          Alert.alert('Error', error.message);
-        }
-      } else {
-        Alert.alert(
-          'Invitation Sent',
-          `An invitation has been created for ${inviteName}. They can sign up using ${inviteEmail} to place orders.`
-        );
-        setShowInviteModal(false);
-        setInviteEmail('');
-        setInviteName('');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to send invitation');
-    } finally {
-      setInviting(false);
-    }
-  };
-
   const stats = {
     suppliers: state.suppliers.length,
     items: state.items.length,
@@ -454,27 +397,6 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* Customer Management - Owner only */}
-      {isOwner() && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Customer Management</Text>
-          <View style={styles.menuCard}>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => setShowInviteModal(true)}
-            >
-              <View style={styles.menuItemLeft}>
-                <Ionicons name="person-add-outline" size={20} color={theme.colors.success} />
-                <View>
-                  <Text style={styles.menuItemLabel}>Invite Customer</Text>
-                  <Text style={styles.menuItemValue}>Send an invitation to a new customer</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
 
       {/* Xero Integration - Owner only */}
       {isOwner() && (
@@ -681,75 +603,6 @@ export default function SettingsScreen() {
       </TouchableOpacity>
 
       <Text style={styles.version}>Easy Ordering v1.0.0</Text>
-
-      {/* Invite Modal */}
-      <Modal visible={showInviteModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Invite Customer</Text>
-              <TouchableOpacity onPress={() => setShowInviteModal(false)}>
-                <Ionicons name="close" size={24} color={theme.colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalBody}>
-              <Text style={styles.inputLabel}>Customer Name</Text>
-              <TextInput
-                style={styles.textInput}
-                value={inviteName}
-                onChangeText={setInviteName}
-                placeholder="Enter customer's name"
-                placeholderTextColor={theme.colors.textMuted}
-                autoCapitalize="words"
-              />
-
-              <Text style={styles.inputLabel}>Email Address</Text>
-              <TextInput
-                style={styles.textInput}
-                value={inviteEmail}
-                onChangeText={setInviteEmail}
-                placeholder="Enter email address"
-                placeholderTextColor={theme.colors.textMuted}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-
-              <Text style={styles.inviteNote}>
-                The customer will be able to sign up and place orders from your store.
-              </Text>
-            </View>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => {
-                  setShowInviteModal(false);
-                  setInviteEmail('');
-                  setInviteName('');
-                }}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.inviteButton, inviting && styles.inviteButtonDisabled]}
-                onPress={handleInviteUser}
-                disabled={inviting}
-              >
-                {inviting ? (
-                  <ActivityIndicator size="small" color={theme.colors.white} />
-                ) : (
-                  <>
-                    <Ionicons name="paper-plane" size={18} color={theme.colors.white} />
-                    <Text style={styles.inviteButtonText}>Send Invitation</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Gmail Filter Modal */}
       <Modal visible={showGmailFilterModal} animationType="slide" transparent>
