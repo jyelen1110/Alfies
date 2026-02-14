@@ -296,12 +296,17 @@ export default function SettingsScreen() {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 30);
 
+      // Generate a simple token
+      const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+
       const { error } = await supabase.from('user_invitations').insert({
         tenant_id: user?.tenant_id,
         email: inviteEmail.trim().toLowerCase(),
         full_name: inviteName.trim(),
         invited_by: user?.id,
         status: 'pending',
+        role: 'user',
+        token: token,
         expires_at: expiresAt.toISOString(),
       });
 
