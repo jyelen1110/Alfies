@@ -387,12 +387,13 @@ export default function UserListScreen() {
           // Get business name from selected tenant
           const selectedTenant = availableTenants.find(t => t.id === selectedTenantId);
 
-          // Fetch existing owner's details to pre-fill for new owner
+          // Fetch existing owner's details to pre-fill for new owner (exclude master users)
           const { data: existingOwner } = await supabase
             .from('users')
-            .select('business_name, contact_phone, contact_email, accounts_email, delivery_address, delivery_instructions')
+            .select('business_name, contact_phone, contact_email, accounts_email, delivery_address, delivery_instructions, is_master')
             .eq('tenant_id', selectedTenantId)
             .eq('role', 'owner')
+            .neq('is_master', true)
             .limit(1)
             .single();
 
@@ -406,7 +407,7 @@ export default function UserListScreen() {
             expires_at: expiresAt.toISOString(),
             full_name: inviteOwnerName.trim(),
             customer_data: {
-              business_name: existingOwner?.business_name || selectedTenant?.name || null,
+              business_name: selectedTenant?.name || null,  // Always use tenant name as business name
               contact_name: inviteOwnerName.trim() || null,
               contact_phone: existingOwner?.contact_phone || null,
               contact_email: inviteEmail.trim().toLowerCase(),
