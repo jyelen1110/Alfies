@@ -312,7 +312,7 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.logoSection}>
-          <Ionicons name="cart" size={64} color={theme.colors.accent} />
+          <Ionicons name="cart" size={64} color={theme.colors.white} />
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>
             {step === 'credentials' ? 'Set up your login' : 'Business Details'}
@@ -596,13 +596,13 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#1565A0',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#1565A0',
     gap: theme.spacing.md,
   },
   loadingText: {
@@ -630,7 +630,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.xl,
   },
   backButton: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: '#1565A0',
     paddingHorizontal: theme.spacing.xl,
     paddingVertical: theme.spacing.md,
     borderRadius: theme.borderRadius.lg,
@@ -662,7 +662,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: theme.fontSize.md,
-    color: theme.colors.accent,
+    color: 'rgba(255, 255, 255, 0.8)',
   },
   stepIndicator: {
     flexDirection: 'row',
@@ -678,7 +678,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
   },
   stepDotActive: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.white,
   },
   stepLine: {
     width: 40,
@@ -812,7 +812,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.spacing.sm,
-    backgroundColor: theme.colors.accent,
+    backgroundColor: '#1565A0',
     borderRadius: theme.borderRadius.lg,
     paddingVertical: 14,
     marginTop: theme.spacing.sm,
@@ -836,10 +836,10 @@ const styles = StyleSheet.create({
   },
   loginLinkText: {
     fontSize: theme.fontSize.sm,
-    color: theme.colors.textSecondary,
+    color: theme.colors.textMuted,
   },
   loginLinkBold: {
     fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.accent,
+    color: '#1565A0',
   },
 });

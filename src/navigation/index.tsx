@@ -2,7 +2,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { View, Text, StyleSheet, Image, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { theme } from '../theme';
 import { useAuth } from '../context/AuthContext';
 import { useOrders } from '../context/OrderContext';
@@ -23,14 +23,6 @@ import FavouritesScreen from '../screens/FavouritesScreen';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-// Header title component (wrapped in View to prevent button behavior)
-function HeaderTitle() {
-  return (
-    <View pointerEvents="none" style={styles.headerTitleWrapper}>
-      <Text style={styles.headerTitleText}>Easy Ordering</Text>
-    </View>
-  );
-}
 
 function ShopStack() {
   return (
@@ -39,7 +31,6 @@ function ShopStack() {
         headerStyle: { backgroundColor: theme.colors.primary },
         headerTintColor: theme.colors.white,
         headerTitleStyle: { fontWeight: theme.fontWeight.semibold },
-        headerLeft: () => <HeaderTitle />,
       }}
     >
       <Stack.Screen
@@ -63,7 +54,6 @@ function ItemsStack() {
         headerStyle: { backgroundColor: theme.colors.primary },
         headerTintColor: theme.colors.white,
         headerTitleStyle: { fontWeight: theme.fontWeight.semibold },
-        headerLeft: () => <HeaderTitle />,
       }}
     >
       <Stack.Screen
@@ -136,7 +126,6 @@ function MainTabs() {
           headerStyle: { backgroundColor: theme.colors.primary },
           headerTintColor: theme.colors.white,
           headerTitleStyle: { fontWeight: theme.fontWeight.semibold },
-          headerLeft: () => <HeaderTitle />,
         }}
       >
         <Tab.Screen
@@ -209,8 +198,7 @@ function MainTabs() {
         headerStyle: { backgroundColor: theme.colors.primary },
         headerTintColor: theme.colors.white,
         headerTitleStyle: { fontWeight: theme.fontWeight.semibold },
-        headerLeft: () => <HeaderTitle />,
-      }}
+              }}
     >
       <Tab.Screen
         name="Favourites"
@@ -269,7 +257,7 @@ export default function Navigation() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <Ionicons name="cart" size={64} color={theme.colors.accent} />
+        <Ionicons name="cart" size={64} color={theme.colors.white} />
         <Text style={styles.loadingText}>Easy Ordering</Text>
       </View>
     );
@@ -296,13 +284,13 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#1565A0',
     gap: theme.spacing.md,
   },
   loadingText: {
     fontSize: theme.fontSize.xl,
     fontWeight: theme.fontWeight.bold,
-    color: theme.colors.primary,
+    color: theme.colors.white,
   },
   badge: {
     position: 'absolute',
@@ -319,14 +307,6 @@ const styles = StyleSheet.create({
   badgeText: {
     color: theme.colors.white,
     fontSize: 10,
-    fontWeight: theme.fontWeight.bold,
-  },
-  headerTitleWrapper: {
-    marginLeft: theme.spacing.md,
-  },
-  headerTitleText: {
-    color: theme.colors.white,
-    fontSize: theme.fontSize.md,
     fontWeight: theme.fontWeight.bold,
   },
 });

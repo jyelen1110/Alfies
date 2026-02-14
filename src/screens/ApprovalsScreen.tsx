@@ -1752,18 +1752,15 @@ export default function ApprovalsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Orders</Text>
-          {pendingCount > 0 && (
-            <View style={styles.countBadge}>
-              <Text style={styles.countBadgeText}>{pendingCount}</Text>
-            </View>
-          )}
-        </View>
+        {pendingCount > 0 && (
+          <View style={styles.countBadge}>
+            <Text style={styles.countBadgeText}>{pendingCount} pending</Text>
+          </View>
+        )}
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.headerButtonText} onPress={openManualOrderModal}>
             <Ionicons name="add-outline" size={18} color={theme.colors.accent} />
-            <Text style={styles.headerButtonLabel}>Add New</Text>
+            <Text style={styles.headerButtonLabel}>Add</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.headerButtonText, isCheckingEmail && styles.headerButtonDisabled]}
@@ -1775,11 +1772,11 @@ export default function ApprovalsScreen() {
             ) : (
               <Ionicons name="mail-outline" size={18} color={theme.colors.accent} />
             )}
-            <Text style={styles.headerButtonLabel}>Check Email</Text>
+            <Text style={styles.headerButtonLabel}>Email</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.headerButtonText} onPress={openImportModal}>
             <Ionicons name="document-attach-outline" size={18} color={theme.colors.accent} />
-            <Text style={styles.headerButtonLabel}>Import CSV</Text>
+            <Text style={styles.headerButtonLabel}>Import</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1855,15 +1852,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.borderLight,
   },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: theme.fontSize.xxxl,
-    fontWeight: theme.fontWeight.bold,
-    color: theme.colors.text,
-  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1896,17 +1884,15 @@ const styles = StyleSheet.create({
   },
   countBadge: {
     backgroundColor: theme.colors.warning,
-    borderRadius: 12,
-    minWidth: 24,
-    height: 24,
+    borderRadius: theme.borderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: theme.spacing.xs + 2,
-    marginLeft: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
   },
   countBadgeText: {
-    fontSize: theme.fontSize.xs,
-    fontWeight: theme.fontWeight.bold,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.white,
   },
   loadingContainer: {

@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Easy Ordering",
-    "slug": "easy-ordering",
+    "slug": "alfies-ordering",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#2C3E50"
+      "backgroundColor": "#1565A0"
     },
     "ios": {
       "supportsTablet": true,
@@ -22,7 +22,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#2C3E50"
+        "backgroundColor": "#1565A0"
       },
       "package": "com.easyordering.app"
     },

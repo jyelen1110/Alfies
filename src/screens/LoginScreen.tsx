@@ -59,7 +59,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.logoSection}>
-          <Ionicons name="cart" size={80} color={theme.colors.accent} />
+          <Ionicons name="cart" size={80} color={theme.colors.white} />
           <Text style={styles.title}>Easy Ordering</Text>
           <Text style={styles.subtitle}>Wholesale Ordering Made Simple</Text>
         </View>
@@ -162,7 +162,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#1565A0',
   },
   scrollContent: {
     flexGrow: 1,
@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: theme.fontSize.lg,
     fontWeight: theme.fontWeight.medium,
-    color: theme.colors.accent,
+    color: 'rgba(255, 255, 255, 0.8)',
     letterSpacing: 1,
   },
   formCard: {
@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
   },
   signInButton: {
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.white,
     borderRadius: theme.borderRadius.lg,
     paddingVertical: 14,
     alignItems: 'center',
@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
   signInButtonText: {
     fontSize: theme.fontSize.md,
     fontWeight: theme.fontWeight.bold,
-    color: theme.colors.white,
+    color: '#1565A0',
     letterSpacing: 0.5,
   },
   registerLink: {
@@ -268,10 +268,10 @@ const styles = StyleSheet.create({
   },
   registerLinkText: {
     fontSize: theme.fontSize.sm,
-    color: theme.colors.textSecondary,
+    color: theme.colors.textMuted,
   },
   registerLinkBold: {
     fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.accent,
+    color: '#1565A0',
   },
 });

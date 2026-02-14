@@ -51,7 +51,7 @@ export default function SettingsScreen() {
 
   // Check for Gmail OAuth callback params (web only)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && window.location?.search) {
       const params = new URLSearchParams(window.location.search);
       const gmailConnected = params.get('gmail_connected');
       const gmailError = params.get('gmail_error');
