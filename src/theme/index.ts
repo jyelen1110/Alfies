@@ -1,12 +1,12 @@
-// Easy Ordering theme - charcoal/warm palette
+// Easy Ordering theme - blue palette
 export const theme = {
   colors: {
-    // Primary: dark charcoal
-    primary: '#2C3E50',
-    primaryLight: '#34495E',
-    primaryDark: '#1A252F',
+    // Primary: EO blue
+    primary: '#1565A0',
+    primaryLight: '#1E88C9',
+    primaryDark: '#0D4A75',
 
-    // Accent: warm amber for CTAs and highlights
+    // Accent: white/light for CTAs on blue, orange for highlights
     accent: '#E67E22',
     accentLight: '#F39C12',
 
@@ -14,17 +14,17 @@ export const theme = {
     success: '#27AE60',
     warning: '#F39C12',
     danger: '#E74C3C',
-    info: '#3498DB',
+    info: '#1565A0',
 
     // Surfaces
     background: '#F5F6FA',
     surface: '#FFFFFF',
-    surfaceHover: '#ECF0F1',
+    surfaceHover: '#E3F2FD',
 
     // Text
-    text: '#2C3E50',
-    textSecondary: '#7F8C8D',
-    textMuted: '#95A5A6',
+    text: '#1A1A1A',
+    textSecondary: '#5F6368',
+    textMuted: '#9AA0A6',
     textLight: '#BDC3C7',
 
     // Borders

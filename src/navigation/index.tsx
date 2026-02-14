@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#1565A0',
+    backgroundColor: 'theme.colors.primary',
     gap: theme.spacing.md,
   },
   loadingText: {
