@@ -78,6 +78,9 @@ export default function UserListScreen() {
   const [inviting, setInviting] = useState(false);
   const [inviteBusinessName, setInviteBusinessName] = useState('');
   const [inviteOwnerName, setInviteOwnerName] = useState('');
+  const [inviteBusinessType, setInviteBusinessType] = useState<'new' | 'existing'>('new');
+  const [availableTenants, setAvailableTenants] = useState<{ id: string; name: string }[]>([]);
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
 
   // Add customer modal state
   const [addModalVisible, setAddModalVisible] = useState(false);
@@ -136,9 +139,26 @@ export default function UserListScreen() {
     }
   }, [tenant?.id]);
 
+  // Fetch available tenants for master user
+  const fetchTenants = useCallback(async () => {
+    if (!isMaster()) return;
+    try {
+      const { data, error } = await supabase
+        .from('tenants')
+        .select('id, name')
+        .order('name');
+
+      if (error) throw error;
+      setAvailableTenants(data || []);
+    } catch (err) {
+      console.error('Failed to fetch tenants:', err);
+    }
+  }, [isMaster]);
+
   // Initial load
   useEffect(() => {
     fetchData();
+    fetchTenants();
   }, [fetchData]);
 
   const onRefresh = useCallback(() => {
@@ -297,49 +317,106 @@ export default function UserListScreen() {
 
     // If master user is inviting an owner, create a new business
     if (isMaster() && inviteRole === 'owner') {
-      if (!inviteBusinessName.trim()) {
-        Alert.alert('Validation', 'Please enter a business name for the new owner.');
-        return;
-      }
-      if (!inviteOwnerName.trim()) {
-        Alert.alert('Validation', 'Please enter the owner\'s name.');
-        return;
-      }
-
-      setInviting(true);
-      try {
-        const { data: result, error: fnError } = await supabase.functions.invoke('create-business', {
-          body: {
-            businessName: inviteBusinessName.trim(),
-            ownerEmail: inviteEmail.trim().toLowerCase(),
-            ownerName: inviteOwnerName.trim(),
-            invitedBy: currentUser?.id,
-          },
-        });
-
-        if (fnError) {
-          throw new Error(fnError.message || 'Failed to create business');
+      if (inviteBusinessType === 'new') {
+        // Creating a new business
+        if (!inviteBusinessName.trim()) {
+          Alert.alert('Validation', 'Please enter a business name for the new owner.');
+          return;
         }
-        if (result?.error) {
-          throw new Error(result.error);
+        if (!inviteOwnerName.trim()) {
+          Alert.alert('Validation', 'Please enter the owner\'s name.');
+          return;
         }
 
-        setInviteModalVisible(false);
-        setInviteEmail('');
-        setInviteBusinessName('');
-        setInviteOwnerName('');
-        setInviteRole('user');
+        setInviting(true);
+        try {
+          const { data: result, error: fnError } = await supabase.functions.invoke('create-business', {
+            body: {
+              businessName: inviteBusinessName.trim(),
+              ownerEmail: inviteEmail.trim().toLowerCase(),
+              ownerName: inviteOwnerName.trim(),
+              invitedBy: currentUser?.id,
+            },
+          });
 
-        Alert.alert(
-          'Business Created',
-          result.message || `New business "${inviteBusinessName}" created successfully.`
-        );
-      } catch (error: any) {
-        Alert.alert('Error', error.message || 'Failed to create business');
-      } finally {
-        setInviting(false);
+          if (fnError) {
+            throw new Error(fnError.message || 'Failed to create business');
+          }
+          if (result?.error) {
+            throw new Error(result.error);
+          }
+
+          setInviteModalVisible(false);
+          setInviteEmail('');
+          setInviteBusinessName('');
+          setInviteOwnerName('');
+          setInviteRole('user');
+          setInviteBusinessType('new');
+          setSelectedTenantId(null);
+
+          Alert.alert(
+            'Business Created',
+            result.message || `New business "${inviteBusinessName}" created successfully.`
+          );
+          fetchTenants(); // Refresh tenant list
+        } catch (error: any) {
+          Alert.alert('Error', error.message || 'Failed to create business');
+        } finally {
+          setInviting(false);
+        }
+        return;
+      } else {
+        // Adding owner to existing business
+        if (!selectedTenantId) {
+          Alert.alert('Validation', 'Please select a business.');
+          return;
+        }
+        if (!inviteOwnerName.trim()) {
+          Alert.alert('Validation', 'Please enter the owner\'s name.');
+          return;
+        }
+
+        setInviting(true);
+        try {
+          // Create invitation for existing business
+          const newId = Crypto.randomUUID();
+          const token = generateInviteToken();
+          const expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + 7);
+
+          const { error } = await supabase.from('user_invitations').insert({
+            id: newId,
+            email: inviteEmail.trim().toLowerCase(),
+            tenant_id: selectedTenantId,
+            role: 'owner',
+            token: token,
+            status: 'pending',
+            expires_at: expiresAt.toISOString(),
+            full_name: inviteOwnerName.trim(),
+          });
+
+          if (error) throw error;
+
+          const selectedTenant = availableTenants.find(t => t.id === selectedTenantId);
+          setInviteModalVisible(false);
+          setInviteEmail('');
+          setInviteBusinessName('');
+          setInviteOwnerName('');
+          setInviteRole('user');
+          setInviteBusinessType('new');
+          setSelectedTenantId(null);
+
+          Alert.alert(
+            'Owner Invitation Sent',
+            `Invitation sent to ${inviteEmail} to join "${selectedTenant?.name}" as an owner.`
+          );
+        } catch (error: any) {
+          Alert.alert('Error', error.message || 'Failed to send invitation');
+        } finally {
+          setInviting(false);
+        }
+        return;
       }
-      return;
     }
 
     // Check if email already exists
@@ -897,14 +974,92 @@ export default function UserListScreen() {
 
             {isMaster() && inviteRole === 'owner' && (
               <>
-                <Text style={styles.inputLabel}>Business Name</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="New Business Name"
-                  placeholderTextColor={theme.colors.textMuted}
-                  value={inviteBusinessName}
-                  onChangeText={setInviteBusinessName}
-                />
+                <Text style={styles.inputLabel}>Business</Text>
+                <View style={styles.rolePicker}>
+                  <TouchableOpacity
+                    style={[
+                      styles.roleOption,
+                      inviteBusinessType === 'new' && styles.roleOptionActive,
+                    ]}
+                    onPress={() => {
+                      setInviteBusinessType('new');
+                      setSelectedTenantId(null);
+                    }}
+                  >
+                    <Ionicons
+                      name="add-circle"
+                      size={16}
+                      color={inviteBusinessType === 'new' ? theme.colors.white : theme.colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.roleOptionText,
+                        inviteBusinessType === 'new' && styles.roleOptionTextActive,
+                      ]}
+                    >
+                      New Business
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.roleOption,
+                      inviteBusinessType === 'existing' && styles.roleOptionActive,
+                    ]}
+                    onPress={() => setInviteBusinessType('existing')}
+                  >
+                    <Ionicons
+                      name="business"
+                      size={16}
+                      color={inviteBusinessType === 'existing' ? theme.colors.white : theme.colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.roleOptionText,
+                        inviteBusinessType === 'existing' && styles.roleOptionTextActive,
+                      ]}
+                    >
+                      Existing
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {inviteBusinessType === 'new' ? (
+                  <>
+                    <Text style={styles.inputLabel}>Business Name</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="New Business Name"
+                      placeholderTextColor={theme.colors.textMuted}
+                      value={inviteBusinessName}
+                      onChangeText={setInviteBusinessName}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.inputLabel}>Select Business</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tenantPicker}>
+                      {availableTenants.map((t) => (
+                        <TouchableOpacity
+                          key={t.id}
+                          style={[
+                            styles.tenantOption,
+                            selectedTenantId === t.id && styles.tenantOptionActive,
+                          ]}
+                          onPress={() => setSelectedTenantId(t.id)}
+                        >
+                          <Text
+                            style={[
+                              styles.tenantOptionText,
+                              selectedTenantId === t.id && styles.tenantOptionTextActive,
+                            ]}
+                          >
+                            {t.name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </>
+                )}
 
                 <Text style={styles.inputLabel}>Owner Name</Text>
                 <TextInput
@@ -940,7 +1095,9 @@ export default function UserListScreen() {
                 <>
                   <Ionicons name="send" size={18} color={theme.colors.white} />
                   <Text style={styles.primaryButtonText}>
-                    {isMaster() && inviteRole === 'owner' ? 'Create Business' : 'Send Invitation'}
+                    {isMaster() && inviteRole === 'owner'
+                      ? (inviteBusinessType === 'new' ? 'Create Business' : 'Send Invitation')
+                      : 'Send Invitation'}
                   </Text>
                 </>
               )}
@@ -1540,6 +1697,34 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
   },
   roleOptionTextActive: {
+    color: theme.colors.white,
+  },
+
+  // Tenant picker for existing business selection
+  tenantPicker: {
+    flexDirection: 'row',
+    marginBottom: theme.spacing.md,
+    maxHeight: 44,
+  },
+  tenantOption: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    marginRight: theme.spacing.sm,
+  },
+  tenantOptionActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  tenantOptionText: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.text,
+  },
+  tenantOptionTextActive: {
     color: theme.colors.white,
   },
 
