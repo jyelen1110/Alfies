@@ -744,7 +744,7 @@ export default function UserListScreen() {
         <View style={styles.userInfo}>
           <View style={styles.userNameRow}>
             <Text style={styles.userName} numberOfLines={1}>
-              {item.business_name || item.full_name}
+              {item.contact_name || item.full_name || 'No name'}
             </Text>
             {isCurrentUser && (
               <Text style={styles.youBadge}>You</Text>
@@ -753,6 +753,11 @@ export default function UserListScreen() {
               <Text style={styles.customerIdBadge}>{item.customer_id}</Text>
             )}
           </View>
+          {item.business_name && (
+            <Text style={styles.userBusinessName} numberOfLines={1}>
+              {item.business_name}
+            </Text>
+          )}
           <Text style={styles.userEmail} numberOfLines={1}>
             {item.email}
           </Text>
@@ -1565,9 +1570,15 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.sm,
     overflow: 'hidden',
   },
-  userEmail: {
+  userBusinessName: {
     fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
     color: theme.colors.textSecondary,
+    marginTop: 2,
+  },
+  userEmail: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
     marginTop: 2,
   },
   badge: {
