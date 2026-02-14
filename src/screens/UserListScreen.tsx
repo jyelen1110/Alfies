@@ -898,7 +898,14 @@ export default function UserListScreen() {
     invitations.forEach(inv => listData.push({ type: 'invitation', data: inv }));
   }
 
-  // Add users section if any (filter out owners from customer list)
+  // Add owners section if any
+  const owners = users.filter(u => u.role === 'owner' && u.id !== currentUser?.id);
+  if (owners.length > 0) {
+    listData.push({ type: 'section-header', title: 'Owners' });
+    owners.forEach(u => listData.push({ type: 'user', data: u }));
+  }
+
+  // Add customers section if any
   const customers = users.filter(u => u.role !== 'owner');
   if (customers.length > 0) {
     listData.push({ type: 'section-header', title: 'Registered Customers' });
