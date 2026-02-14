@@ -49,6 +49,16 @@ type Invitation = {
   status: 'pending' | 'accepted' | 'expired' | 'cancelled';
   expires_at: string;
   created_at: string;
+  customer_data?: {
+    customer_id?: string;
+    business_name?: string;
+    contact_name?: string;
+    contact_phone?: string;
+    contact_email?: string;
+    accounts_email?: string;
+    delivery_address?: string;
+    delivery_instructions?: string;
+  };
 };
 
 type RoleOption = 'owner' | 'user';
@@ -163,28 +173,51 @@ export default function UserListScreen() {
     }
     if (!tenant?.id) return;
 
-    // Note: We don't block existing emails anymore - the Edge Function handles
-    // connecting existing customers to this tenant as a new supplier relationship
+    // Check if email already exists as a user
+    const existingUser = users.find(u => u.email.toLowerCase() === addEmail.trim().toLowerCase());
+    if (existingUser) {
+      Alert.alert('Already Registered', 'This email is already registered as a customer.');
+      return;
+    }
+
+    // Check if there's already a pending invitation
+    const existingInvite = invitations.find(i => i.email.toLowerCase() === addEmail.trim().toLowerCase());
+    if (existingInvite) {
+      Alert.alert('Invitation Exists', 'There is already a pending invitation for this email.');
+      return;
+    }
 
     setAdding(true);
     try {
-      // Call Edge Function to create auth user and database record
-      const { data, error } = await supabase.functions.invoke('create-customer', {
-        body: {
-          email: addEmail.trim().toLowerCase(),
-          business_name: addBusinessName.trim(),
-          customer_id: addCustomerId.trim() || null,
-          contact_name: addContactName.trim() || null,
-          contact_phone: addContactPhone.trim() || null,
-          contact_email: addContactEmail.trim().toLowerCase() || addEmail.trim().toLowerCase(),
-          accounts_email: addAccountsEmail.trim().toLowerCase() || null,
-          delivery_address: addDeliveryAddress.trim() || null,
-          delivery_instructions: addDeliveryInstructions.trim() || null,
-        },
-      });
+      // Create invitation with pre-filled customer data
+      const newId = Crypto.randomUUID();
+      const token = generateInviteToken();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30); // 30 days expiry
+
+      const customerData = {
+        customer_id: addCustomerId.trim() || null,
+        business_name: addBusinessName.trim(),
+        contact_name: addContactName.trim() || null,
+        contact_phone: addContactPhone.trim() || null,
+        contact_email: addContactEmail.trim().toLowerCase() || addEmail.trim().toLowerCase(),
+        accounts_email: addAccountsEmail.trim().toLowerCase() || null,
+        delivery_address: addDeliveryAddress.trim() || null,
+        delivery_instructions: addDeliveryInstructions.trim() || null,
+      };
+
+      const { data, error } = await supabase.from('user_invitations').insert({
+        id: newId,
+        email: addEmail.trim().toLowerCase(),
+        tenant_id: tenant.id,
+        role: 'user',
+        token: token,
+        status: 'pending',
+        expires_at: expiresAt.toISOString(),
+        customer_data: customerData,
+      }).select().single();
 
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
 
       // Clear form fields
       const customerName = addBusinessName.trim();
@@ -200,20 +233,15 @@ export default function UserListScreen() {
       setAddDeliveryInstructions('');
 
       setAddModalVisible(false);
-
-      // Show appropriate message based on whether it was an existing customer or new
-      if (data?.existing_customer) {
-        Alert.alert(
-          'Customer Connected',
-          data.message || `${customerEmail} is now connected to your business and can see your products.`
-        );
-      } else {
-        Alert.alert(
-          'Customer Added',
-          `${customerName} has been added. A password reset email has been sent to ${customerEmail} so they can set up their login.`
-        );
-      }
       fetchData();
+
+      // Show invitation created and offer to share
+      setSelectedInvitation(data);
+      setInvitationModalVisible(true);
+      Alert.alert(
+        'Invitation Created',
+        `An invitation has been created for ${customerName}. They can register using ${customerEmail} and their details will be pre-filled.`
+      );
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to add customer');
     } finally {
@@ -544,7 +572,7 @@ export default function UserListScreen() {
     );
   };
 
-  // --- Role Picker ---
+  // --- Role Picker (Owner option only visible to master users) ---
 
   const RolePicker = ({
     value,
@@ -575,27 +603,29 @@ export default function UserListScreen() {
           Customer
         </Text>
       </TouchableOpacity>
-      <TouchableOpacity
-        style={[
-          styles.roleOption,
-          value === 'owner' && styles.roleOptionActiveOwner,
-        ]}
-        onPress={() => onChange('owner')}
-      >
-        <Ionicons
-          name="shield-checkmark"
-          size={16}
-          color={value === 'owner' ? theme.colors.white : theme.colors.textSecondary}
-        />
-        <Text
+      {isMaster() && (
+        <TouchableOpacity
           style={[
-            styles.roleOptionText,
-            value === 'owner' && styles.roleOptionTextActive,
+            styles.roleOption,
+            value === 'owner' && styles.roleOptionActiveOwner,
           ]}
+          onPress={() => onChange('owner')}
         >
-          Owner
-        </Text>
-      </TouchableOpacity>
+          <Ionicons
+            name="shield-checkmark"
+            size={16}
+            color={value === 'owner' ? theme.colors.white : theme.colors.textSecondary}
+          />
+          <Text
+            style={[
+              styles.roleOptionText,
+              value === 'owner' && styles.roleOptionTextActive,
+            ]}
+          >
+            Owner
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 

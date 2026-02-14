@@ -102,6 +102,19 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
       setInvitation(data);
       setEmail(data.email);
       setContactEmail(data.email);
+
+      // Pre-fill form with customer_data if available
+      if (data.customer_data) {
+        const cd = data.customer_data;
+        if (cd.business_name) setBusinessName(cd.business_name);
+        if (cd.contact_name) setContactName(cd.contact_name);
+        if (cd.contact_phone) setContactPhone(cd.contact_phone);
+        if (cd.contact_email) setContactEmail(cd.contact_email);
+        if (cd.accounts_email) setAccountsEmail(cd.accounts_email);
+        if (cd.delivery_address) setDeliveryAddress(cd.delivery_address);
+        if (cd.delivery_instructions) setDeliveryInstructions(cd.delivery_instructions);
+      }
+
       setIsValidating(false);
     } catch {
       setError('Failed to validate invitation. Please try again.');
@@ -180,6 +193,18 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
 
       setInvitation(foundInvitation);
       setContactEmail(email.trim());
+
+      // Pre-fill form with customer_data if available
+      if (foundInvitation.customer_data) {
+        const cd = foundInvitation.customer_data;
+        if (cd.business_name) setBusinessName(cd.business_name);
+        if (cd.contact_name) setContactName(cd.contact_name);
+        if (cd.contact_phone) setContactPhone(cd.contact_phone);
+        if (cd.contact_email) setContactEmail(cd.contact_email);
+        if (cd.accounts_email) setAccountsEmail(cd.accounts_email);
+        if (cd.delivery_address) setDeliveryAddress(cd.delivery_address);
+        if (cd.delivery_instructions) setDeliveryInstructions(cd.delivery_instructions);
+      }
     }
 
     setStep('profile');
@@ -233,6 +258,7 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
         full_name: contactName.trim(),
         tenant_id: invitation?.tenant_id,
         role: invitation?.role || 'user',
+        customer_id: invitation?.customer_data?.customer_id || null,
         business_name: businessName.trim(),
         contact_name: contactName.trim(),
         contact_phone: contactPhone.trim(),
