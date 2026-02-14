@@ -384,6 +384,18 @@ export default function UserListScreen() {
           const expiresAt = new Date();
           expiresAt.setDate(expiresAt.getDate() + 7);
 
+          // Get business name from selected tenant
+          const selectedTenant = availableTenants.find(t => t.id === selectedTenantId);
+
+          // Fetch existing owner's details to pre-fill for new owner
+          const { data: existingOwner } = await supabase
+            .from('users')
+            .select('business_name, contact_phone, contact_email, accounts_email, delivery_address, delivery_instructions')
+            .eq('tenant_id', selectedTenantId)
+            .eq('role', 'owner')
+            .limit(1)
+            .single();
+
           const { error } = await supabase.from('user_invitations').insert({
             id: newId,
             email: inviteEmail.trim().toLowerCase(),
@@ -393,11 +405,18 @@ export default function UserListScreen() {
             status: 'pending',
             expires_at: expiresAt.toISOString(),
             full_name: inviteOwnerName.trim(),
+            customer_data: {
+              business_name: existingOwner?.business_name || selectedTenant?.name || null,
+              contact_name: inviteOwnerName.trim() || null,
+              contact_phone: existingOwner?.contact_phone || null,
+              contact_email: inviteEmail.trim().toLowerCase(),
+              accounts_email: existingOwner?.accounts_email || null,
+              delivery_address: existingOwner?.delivery_address || null,
+              delivery_instructions: existingOwner?.delivery_instructions || null,
+            },
           });
 
           if (error) throw error;
-
-          const selectedTenant = availableTenants.find(t => t.id === selectedTenantId);
           setInviteModalVisible(false);
           setInviteEmail('');
           setInviteBusinessName('');

@@ -83,64 +83,12 @@ serve(async (req) => {
       )
     }
 
-    // Create auth user for the owner
-    const tempPassword = crypto.randomUUID()
-
-    const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
-      email: ownerEmail,
-      password: tempPassword,
-      email_confirm: true,
-    })
-
-    if (authError) {
-      // Rollback: delete the tenant
-      await supabase.from('tenants').delete().eq('id', newTenant.id)
-
-      console.error('Error creating auth user:', authError)
-      return new Response(
-        JSON.stringify({ error: authError.message }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    // Create the user profile as owner of the new tenant
-    const { error: userError } = await supabase.from('users').insert({
-      id: authUser.user.id,
-      email: ownerEmail,
-      full_name: ownerName,
-      tenant_id: newTenant.id,
-      role: 'owner',
-      business_name: businessName,
-    })
-
-    if (userError) {
-      // Rollback: delete auth user and tenant
-      await supabase.auth.admin.deleteUser(authUser.user.id)
-      await supabase.from('tenants').delete().eq('id', newTenant.id)
-
-      console.error('Error creating user profile:', userError)
-      return new Response(
-        JSON.stringify({ error: 'Failed to create owner profile' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
     // Grant master user access to the new tenant
     await supabase.from('tenant_access').insert({
       user_id: invitedBy,
       tenant_id: newTenant.id,
       access_level: 'full'
     })
-
-    // Send password reset email so owner can set their password
-    const { error: resetError } = await supabase.auth.admin.generateLink({
-      type: 'recovery',
-      email: ownerEmail,
-    })
-
-    if (resetError) {
-      console.warn('Could not send password reset email:', resetError)
-    }
 
     // Create default supplier for the new business (same as tenant)
     await supabase.from('suppliers').insert({
@@ -154,16 +102,58 @@ serve(async (req) => {
       status: 'active'
     })
 
+    // Generate invitation token
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    let token = ''
+    for (let i = 0; i < 32; i++) {
+      token += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+
+    // Create invitation with pre-filled business data
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + 30) // 30 days expiry
+
+    const { data: invitation, error: inviteError } = await supabase
+      .from('user_invitations')
+      .insert({
+        email: ownerEmail.toLowerCase(),
+        tenant_id: newTenant.id,
+        role: 'owner',
+        token: token,
+        status: 'pending',
+        expires_at: expiresAt.toISOString(),
+        full_name: ownerName,
+        customer_data: {
+          business_name: businessName,
+          contact_name: ownerName,
+        }
+      })
+      .select()
+      .single()
+
+    if (inviteError) {
+      // Rollback: delete tenant and supplier
+      await supabase.from('suppliers').delete().eq('tenant_id', newTenant.id)
+      await supabase.from('tenant_access').delete().eq('tenant_id', newTenant.id)
+      await supabase.from('tenants').delete().eq('id', newTenant.id)
+
+      console.error('Error creating invitation:', inviteError)
+      return new Response(
+        JSON.stringify({ error: 'Failed to create owner invitation' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         tenant: newTenant,
-        user: {
-          id: authUser.user.id,
+        invitation: {
+          id: invitation.id,
           email: ownerEmail,
           full_name: ownerName
         },
-        message: `Business "${businessName}" created. Password reset email sent to ${ownerEmail}.`
+        message: `Business "${businessName}" created. Invitation sent to ${ownerEmail}. They can register using the app.`
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
