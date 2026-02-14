@@ -173,8 +173,15 @@ export async function createXeroInvoice(
 
     if (!response.ok) {
       console.error('Xero create invoice error:', data);
-      // Return the actual error message from the edge function
-      return { success: false, error: data.error || 'Failed to create Xero invoice' };
+      // Handle different error formats (Supabase gateway vs Edge Function)
+      let errorMessage = data.error || data.message || 'Failed to create Xero invoice';
+
+      // Add context for common errors
+      if (data.code === 401 || data.message?.includes('JWT')) {
+        errorMessage = 'Session expired. Please sign out and sign back in.';
+      }
+
+      return { success: false, error: errorMessage };
     }
 
     if (data?.code === 'XERO_NOT_CONNECTED') {
