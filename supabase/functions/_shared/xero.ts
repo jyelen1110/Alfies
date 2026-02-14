@@ -69,19 +69,19 @@ export async function refreshXeroToken(refreshToken: string): Promise<XeroTokens
   return response.json();
 }
 
-export async function getValidXeroToken(tenantId: string): Promise<{ accessToken: string; xeroTenantId: string } | null> {
+export async function getValidXeroToken(userId: string): Promise<{ accessToken: string; xeroTenantId: string } | null> {
   const supabase = getSupabaseAdmin();
 
-  // Get stored tokens
+  // Get stored tokens by user_id (user-based integrations)
   const { data: tokenData, error } = await supabase
     .from('integration_tokens')
     .select('*')
-    .eq('tenant_id', tenantId)
+    .eq('user_id', userId)
     .eq('provider', 'xero')
     .single();
 
   if (error || !tokenData) {
-    console.error('No Xero token found for tenant:', tenantId);
+    console.error('No Xero token found for user:', userId);
     return null;
   }
 

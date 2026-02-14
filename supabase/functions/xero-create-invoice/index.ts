@@ -86,12 +86,12 @@ serve(async (req) => {
       });
     }
 
-    // Get valid Xero token
-    console.log('Fetching Xero token...');
-    const tokenData = await getValidXeroToken(userData.tenant_id);
+    // Get valid Xero token (user-based integrations)
+    console.log('Fetching Xero token for user:', user.id);
+    const tokenData = await getValidXeroToken(user.id);
     if (!tokenData) {
-      console.error('ERROR: Xero not connected for tenant', userData.tenant_id);
-      return new Response(JSON.stringify({ error: 'Xero not connected', code: 'XERO_NOT_CONNECTED' }), {
+      console.error('ERROR: Xero not connected for user', user.id);
+      return new Response(JSON.stringify({ error: 'Xero not connected. Please connect your Xero account in Settings.', code: 'XERO_NOT_CONNECTED' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
