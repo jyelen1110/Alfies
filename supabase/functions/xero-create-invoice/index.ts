@@ -324,28 +324,76 @@ serve(async (req) => {
       console.error('Xero API error status:', xeroResponse.status);
       console.error('Xero API error body:', errorText);
 
-      // Parse Xero error
+      // Parse Xero error - extract all validation messages
       let errorMessage = 'Failed to create invoice in Xero';
+      const validationErrors: string[] = [];
+
       try {
         const errorJson = JSON.parse(errorText);
         console.error('Xero API error parsed:', JSON.stringify(errorJson, null, 2));
 
+        // Handle different Xero error formats
+
+        // Format 1: Direct Message field
         if (errorJson.Message) {
           errorMessage = errorJson.Message;
-        } else if (errorJson.Elements?.[0]?.ValidationErrors?.[0]?.Message) {
-          errorMessage = errorJson.Elements[0].ValidationErrors[0].Message;
         }
 
-        // Log all validation errors if present
-        if (errorJson.Elements?.[0]?.ValidationErrors) {
-          console.error('Validation errors:', JSON.stringify(errorJson.Elements[0].ValidationErrors, null, 2));
+        // Format 2: Detail field (common for auth errors)
+        if (errorJson.Detail) {
+          errorMessage = errorJson.Detail;
         }
+
+        // Format 3: Elements array with ValidationErrors (most common for validation)
+        if (errorJson.Elements && Array.isArray(errorJson.Elements)) {
+          for (const element of errorJson.Elements) {
+            if (element.ValidationErrors && Array.isArray(element.ValidationErrors)) {
+              for (const valError of element.ValidationErrors) {
+                if (valError.Message) {
+                  validationErrors.push(valError.Message);
+                }
+              }
+            }
+          }
+        }
+
+        // Format 4: Direct ValidationErrors array
+        if (errorJson.ValidationErrors && Array.isArray(errorJson.ValidationErrors)) {
+          for (const valError of errorJson.ValidationErrors) {
+            if (valError.Message) {
+              validationErrors.push(valError.Message);
+            }
+          }
+        }
+
+        // Format 5: Problem detail (RFC 7807)
+        if (errorJson.title) {
+          errorMessage = errorJson.title;
+          if (errorJson.detail) {
+            errorMessage += `: ${errorJson.detail}`;
+          }
+        }
+
+        // Build final error message
+        if (validationErrors.length > 0) {
+          errorMessage = `Xero validation error:\n• ${validationErrors.join('\n• ')}`;
+        }
+
+        console.error('Validation errors found:', validationErrors);
       } catch {
         console.error('Could not parse Xero error response as JSON');
+        // Try to extract any useful info from the raw text
+        if (errorText.includes('validation') || errorText.includes('Validation')) {
+          errorMessage = 'Xero validation error: ' + errorText.substring(0, 200);
+        }
       }
 
       console.log('=== Xero Create Invoice - Failed ===');
-      return new Response(JSON.stringify({ error: errorMessage }), {
+      return new Response(JSON.stringify({
+        error: errorMessage,
+        code: 'XERO_API_ERROR',
+        details: validationErrors.length > 0 ? validationErrors : undefined
+      }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
