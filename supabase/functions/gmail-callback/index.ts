@@ -25,15 +25,24 @@ serve(async (req) => {
       )
     }
 
-    // Decode state to get tenantId
+    // Decode state to get tenantId and userId
     let tenantId: string
+    let userId: string | null = null
     try {
       const decoded = JSON.parse(atob(state))
       tenantId = decoded.tenantId
+      userId = decoded.userId || null
     } catch {
       return new Response(
         JSON.stringify({ error: 'Invalid state parameter' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: 'User authentication required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
@@ -80,6 +89,7 @@ serve(async (req) => {
     const { error: upsertError } = await supabase
       .from('gmail_connections')
       .upsert({
+        user_id: userId,
         tenant_id: tenantId,
         email,
         access_token: tokens.access_token,
@@ -88,7 +98,7 @@ serve(async (req) => {
         is_active: true,
         updated_at: new Date().toISOString(),
       }, {
-        onConflict: 'tenant_id'
+        onConflict: 'user_id'
       })
 
     if (upsertError) {

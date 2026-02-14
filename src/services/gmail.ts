@@ -21,10 +21,16 @@ export interface GmailLabel {
 
 export async function checkGmailConnection(tenantId: string): Promise<GmailConnectionStatus> {
   try {
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { connected: false };
+    }
+
     const { data, error } = await supabase
       .from('gmail_connections')
       .select('email, last_sync_at, last_error, is_active, filter_sender, filter_to, filter_subject, filter_label')
-      .eq('tenant_id', tenantId)
+      .eq('user_id', user.id)
       .single();
 
     if (error || !data) {
@@ -116,10 +122,16 @@ export async function connectGmail(tenantId: string): Promise<{ success: boolean
 
 export async function disconnectGmail(tenantId: string): Promise<{ success: boolean; error?: string }> {
   try {
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
     const { error } = await supabase
       .from('gmail_connections')
       .update({ is_active: false })
-      .eq('tenant_id', tenantId);
+      .eq('user_id', user.id);
 
     if (error) {
       return { success: false, error: error.message };
@@ -137,6 +149,12 @@ export async function updateGmailFilters(
   filters: { filterSender?: string; filterTo?: string; filterSubject?: string; filterLabel?: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
     const { error } = await supabase
       .from('gmail_connections')
       .update({
@@ -146,7 +164,7 @@ export async function updateGmailFilters(
         filter_label: filters.filterLabel || 'INBOX',
         updated_at: new Date().toISOString(),
       })
-      .eq('tenant_id', tenantId);
+      .eq('user_id', user.id);
 
     if (error) {
       return { success: false, error: error.message };
@@ -161,11 +179,18 @@ export async function updateGmailFilters(
 
 export async function getGmailLabels(tenantId: string): Promise<{ labels: GmailLabel[]; error?: string }> {
   try {
+    // Get current session for auth
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return { labels: [], error: 'Not authenticated' };
+    }
+
     const response = await fetch(`${supabaseUrl}/functions/v1/gmail-labels`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'apikey': supabaseAnonKey,
+        'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({ tenantId }),
     });

@@ -69,6 +69,7 @@ serve(async (req) => {
     await supabaseAdmin.from('oauth_states').insert({
       state,
       tenant_id: userData.tenant_id,
+      user_id: user.id,
       provider: 'xero',
     });
 

@@ -24,13 +24,19 @@ interface XeroConnectionStatus {
 }
 
 /**
- * Check if Xero is connected for the current tenant
+ * Check if Xero is connected for the current user
  */
 export async function checkXeroConnection(tenantId: string): Promise<XeroConnectionStatus> {
+  // Get current user
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { connected: false };
+  }
+
   const { data, error } = await supabase
     .from('integration_tokens')
     .select('xero_tenant_id, updated_at')
-    .eq('tenant_id', tenantId)
+    .eq('user_id', user.id)
     .eq('provider', 'xero')
     .single();
 
@@ -111,29 +117,26 @@ export async function connectXero(): Promise<{ success: boolean; error?: string 
 }
 
 /**
- * Disconnect Xero integration
+ * Disconnect Xero integration for current user
  */
 export async function disconnectXero(tenantId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    // Delete the integration token
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    // Delete the integration token for this user
     const { error } = await supabase
       .from('integration_tokens')
       .delete()
-      .eq('tenant_id', tenantId)
+      .eq('user_id', user.id)
       .eq('provider', 'xero');
 
     if (error) {
       return { success: false, error: error.message };
     }
-
-    // Clear Xero info from tenant
-    await supabase
-      .from('tenants')
-      .update({
-        xero_tenant_id: null,
-        xero_connected_at: null,
-      })
-      .eq('id', tenantId);
 
     return { success: true };
   } catch (error) {

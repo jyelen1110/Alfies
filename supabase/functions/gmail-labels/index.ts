@@ -12,24 +12,39 @@ serve(async (req) => {
   }
 
   try {
-    const { tenantId } = await req.json()
-
-    if (!tenantId) {
+    // Get user from auth header
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
       return new Response(
-        JSON.stringify({ error: 'tenantId is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Authentication required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Get the Gmail connection for this tenant
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+    // Get user from auth
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } }
+    })
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Get the Gmail connection for this user
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     const { data: connection, error: connError } = await supabase
       .from('gmail_connections')
       .select('access_token, refresh_token, token_expiry')
-      .eq('tenant_id', tenantId)
+      .eq('user_id', user.id)
       .eq('is_active', true)
       .single()
 
@@ -72,7 +87,7 @@ serve(async (req) => {
           access_token: tokens.access_token,
           token_expiry: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
         })
-        .eq('tenant_id', tenantId)
+        .eq('user_id', user.id)
     }
 
     // Fetch labels from Gmail API

@@ -17,7 +17,16 @@
       "Bash(node:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npx expo export --platform web)",
+      "Bash(npx vercel:*)",
+      "Bash(SUPABASE_SERVICE_ROLE_KEY=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpamdtbWNrYWZtZm1tbHB2Z3lpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDAyNDM1OCwiZXhwIjoyMDg1NjAwMzU4fQ.rXf3ro54XGwoS-9LsCBzgh_zC0PK9jmIMLgF1i9O6tY\" npx tsx:*)",
+      "Bash(npx tsx:*)",
+      "Bash(set SUPABASE_SERVICE_ROLE_KEY=%SUPABASE_SERVICE_ROLE_KEY%)",
+      "Bash(findstr:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:easy-ordering.vercel.app)",
+      "Bash(grep:*)"
     ]
   }
 }

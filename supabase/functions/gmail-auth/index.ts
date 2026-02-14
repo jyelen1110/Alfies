@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,6 +24,20 @@ serve(async (req) => {
       )
     }
 
+    // Get user from auth header
+    const authHeader = req.headers.get('Authorization')
+    let userId = null
+
+    if (authHeader) {
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        { global: { headers: { Authorization: authHeader } } }
+      )
+      const { data: { user } } = await supabase.auth.getUser()
+      userId = user?.id
+    }
+
     if (!GOOGLE_CLIENT_ID) {
       return new Response(
         JSON.stringify({ error: 'Google OAuth not configured' }),
@@ -36,7 +51,8 @@ serve(async (req) => {
       'https://www.googleapis.com/auth/userinfo.email'
     ]
 
-    const state = btoa(JSON.stringify({ tenantId }))
+    // Include userId in state for user-based connections
+    const state = btoa(JSON.stringify({ tenantId, userId }))
 
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
     authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID)

@@ -120,11 +120,12 @@ serve(async (req) => {
     // Store tokens in database
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    // Upsert the integration token
+    // Upsert the integration token (keyed by user_id)
     const { error: upsertError } = await supabaseAdmin
       .from('integration_tokens')
       .upsert(
         {
+          user_id: stateData.user_id,
           tenant_id: stateData.tenant_id,
           provider: 'xero',
           access_token: tokens.access_token,
@@ -135,7 +136,7 @@ serve(async (req) => {
           updated_at: new Date().toISOString(),
         },
         {
-          onConflict: 'tenant_id,provider',
+          onConflict: 'user_id,provider',
         }
       );
 
@@ -145,15 +146,6 @@ serve(async (req) => {
         headers: { 'Content-Type': 'text/html' },
       });
     }
-
-    // Update tenant with Xero info
-    await supabaseAdmin
-      .from('tenants')
-      .update({
-        xero_tenant_id: xeroTenant.tenantId,
-        xero_connected_at: new Date().toISOString(),
-      })
-      .eq('id', stateData.tenant_id);
 
     // Return success page that closes the window
     return new Response(generateSuccessHtml(xeroTenant.tenantName), {
