@@ -122,8 +122,8 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
         return null;
       }
 
-      // Check if expired
-      if (new Date(data.expires_at) < new Date()) {
+      // Check if expired (skip if no expiry set)
+      if (data.expires_at && new Date(data.expires_at) < new Date()) {
         return null;
       }
 

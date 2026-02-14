@@ -292,12 +292,17 @@ export default function SettingsScreen() {
     setInviting(true);
     try {
       // Create a pending invitation in the database
+      // Set expiry to 30 days from now
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30);
+
       const { error } = await supabase.from('user_invitations').insert({
         tenant_id: user?.tenant_id,
         email: inviteEmail.trim().toLowerCase(),
         full_name: inviteName.trim(),
         invited_by: user?.id,
         status: 'pending',
+        expires_at: expiresAt.toISOString(),
       });
 
       if (error) {
