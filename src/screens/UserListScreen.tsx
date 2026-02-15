@@ -468,6 +468,9 @@ export default function UserListScreen() {
         token: token,
         status: 'pending',
         expires_at: expiresAt.toISOString(),
+        customer_data: {
+          contact_email: inviteEmail.trim().toLowerCase(),
+        },
       }).select().single();
 
       if (error) throw error;

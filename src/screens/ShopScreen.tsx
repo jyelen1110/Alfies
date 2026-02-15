@@ -440,6 +440,8 @@ const styles = StyleSheet.create({
   // Supplier chips
   supplierChipsScroll: {
     flexGrow: 0,
+    flexShrink: 0,
+    minHeight: 44,
     marginBottom: theme.spacing.sm,
   },
   supplierChipsContainer: {
@@ -447,6 +449,7 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.xs,
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 44,
   },
   supplierChip: {
     flexDirection: 'row',
@@ -479,6 +482,8 @@ const styles = StyleSheet.create({
   // Category pills
   categoryPillsScroll: {
     flexGrow: 0,
+    flexShrink: 0,
+    minHeight: 44,
     marginBottom: theme.spacing.md,
   },
   categoryPillsContainer: {
@@ -486,6 +491,7 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.xs,
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 44,
   },
   categoryPill: {
     paddingHorizontal: theme.spacing.md,

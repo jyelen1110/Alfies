@@ -32,6 +32,36 @@ interface Props {
   style?: any;
 }
 
+// Load Google Maps script for web
+const loadGoogleMapsScript = (): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    if (Platform.OS !== 'web') {
+      resolve();
+      return;
+    }
+
+    // Check if already loaded
+    if ((window as any).google?.maps?.places) {
+      resolve();
+      return;
+    }
+
+    // Check if script is already being loaded
+    const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve());
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_PLACES_API_KEY}&libraries=places`;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load Google Maps script'));
+    document.head.appendChild(script);
+  });
+};
+
 export default function AddressAutocomplete({
   value,
   onChangeText,
@@ -43,7 +73,21 @@ export default function AddressAutocomplete({
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [googleLoaded, setGoogleLoaded] = useState(false);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+  const autocompleteService = useRef<any>(null);
+
+  // Load Google Maps script on web
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      loadGoogleMapsScript()
+        .then(() => {
+          setGoogleLoaded(true);
+          autocompleteService.current = new (window as any).google.maps.places.AutocompleteService();
+        })
+        .catch((err) => console.error('Failed to load Google Maps:', err));
+    }
+  }, []);
 
   useEffect(() => {
     if (debounceTimer.current) {
@@ -65,32 +109,74 @@ export default function AddressAutocomplete({
         clearTimeout(debounceTimer.current);
       }
     };
-  }, [value]);
+  }, [value, googleLoaded]);
 
   const fetchPredictions = async (input: string) => {
     if (!input.trim()) return;
 
     setIsLoading(true);
-    try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
-          input
-        )}&components=country:au&types=address&key=${GOOGLE_PLACES_API_KEY}`
-      );
-      const data = await response.json();
 
-      if (data.status === 'OK' && data.predictions) {
-        setPredictions(data.predictions);
-        setShowDropdown(true);
-      } else {
-        setPredictions([]);
-        setShowDropdown(false);
+    // Use JavaScript SDK on web, REST API on mobile
+    if (Platform.OS === 'web') {
+      if (!autocompleteService.current) {
+        setIsLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error('Error fetching predictions:', error);
-      setPredictions([]);
-    } finally {
-      setIsLoading(false);
+
+      try {
+        autocompleteService.current.getPlacePredictions(
+          {
+            input,
+            componentRestrictions: { country: 'au' },
+            types: ['address'],
+          },
+          (results: any[], status: string) => {
+            setIsLoading(false);
+            if (status === 'OK' && results) {
+              const formattedPredictions: Prediction[] = results.map((result) => ({
+                place_id: result.place_id,
+                description: result.description,
+                structured_formatting: {
+                  main_text: result.structured_formatting?.main_text || result.description,
+                  secondary_text: result.structured_formatting?.secondary_text || '',
+                },
+              }));
+              setPredictions(formattedPredictions);
+              setShowDropdown(true);
+            } else {
+              setPredictions([]);
+              setShowDropdown(false);
+            }
+          }
+        );
+      } catch (error) {
+        console.error('Error fetching predictions:', error);
+        setPredictions([]);
+        setIsLoading(false);
+      }
+    } else {
+      // Mobile: Use REST API
+      try {
+        const response = await fetch(
+          `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
+            input
+          )}&components=country:au&types=address&key=${GOOGLE_PLACES_API_KEY}`
+        );
+        const data = await response.json();
+
+        if (data.status === 'OK' && data.predictions) {
+          setPredictions(data.predictions);
+          setShowDropdown(true);
+        } else {
+          setPredictions([]);
+          setShowDropdown(false);
+        }
+      } catch (error) {
+        console.error('Error fetching predictions:', error);
+        setPredictions([]);
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 

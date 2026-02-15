@@ -153,29 +153,41 @@ export async function createXeroInvoice(
   invoiceId: string
 ): Promise<XeroInvoiceResponse> {
   try {
-    // Use supabase.functions.invoke for proper auth handling
-    const { data, error } = await supabase.functions.invoke('xero-create-invoice', {
-      body: { order_id: orderId, invoice_id: invoiceId },
+    // Get session for auth header
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    // Use fetch directly for better error handling
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/xero-create-invoice`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ order_id: orderId, invoice_id: invoiceId }),
     });
 
-    if (error) {
-      console.error('Xero create invoice error:', error);
-      let errorMessage = error.message || 'Failed to create Xero invoice';
+    const data = await response.json();
+    console.log('Xero create invoice response:', response.status, data);
+
+    // Check for errors - the Edge Function returns error details in the response body
+    if (!response.ok || data.error) {
+      let errorMessage = data.error || 'Failed to create Xero invoice';
 
       // Add context for common errors
-      if (error.message?.includes('JWT') || error.message?.includes('401')) {
+      if (errorMessage.includes('JWT') || errorMessage.includes('401')) {
         errorMessage = 'Session expired. Please sign out and sign back in.';
       }
 
+      console.error('Xero create invoice error:', errorMessage);
       return { success: false, error: errorMessage };
     }
 
-    if (data?.code === 'XERO_NOT_CONNECTED') {
+    if (data.code === 'XERO_NOT_CONNECTED') {
       return { success: false, error: data.error || 'Xero not connected' };
-    }
-
-    if (data?.error) {
-      return { success: false, error: data.error };
     }
 
     return {

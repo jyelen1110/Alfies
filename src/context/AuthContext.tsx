@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { User, Tenant } from '../types';
+import { registerForPushNotifications, clearPushToken } from '../services/notifications';
 
 interface AuthContextType {
   session: Session | null;
@@ -90,6 +91,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .order('name');
         setAllTenants(tenantsData || []);
       }
+
+      // Register for push notifications
+      registerForPushNotifications().catch((err) => {
+        console.log('Push notification registration skipped:', err);
+      });
     } catch (error) {
       console.error('Error fetching user profile:', error);
     } finally {
@@ -107,6 +113,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    // Clear push token before signing out
+    await clearPushToken().catch(() => {});
     await supabase.auth.signOut();
   };
 

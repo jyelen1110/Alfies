@@ -104,18 +104,6 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
       setEmail(data.email);
       setContactEmail(data.email);
 
-      // Pre-fill form with customer_data if available
-      if (data.customer_data) {
-        const cd = data.customer_data;
-        if (cd.business_name) setBusinessName(cd.business_name);
-        if (cd.contact_name) setContactName(cd.contact_name);
-        if (cd.contact_phone) setContactPhone(cd.contact_phone);
-        if (cd.contact_email) setContactEmail(cd.contact_email);
-        if (cd.accounts_email) setAccountsEmail(cd.accounts_email);
-        if (cd.delivery_address) setDeliveryAddress(cd.delivery_address);
-        if (cd.delivery_instructions) setDeliveryInstructions(cd.delivery_instructions);
-      }
-
       setIsValidating(false);
     } catch {
       setError('Failed to validate invitation. Please try again.');
@@ -194,18 +182,6 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
 
       setInvitation(foundInvitation);
       setContactEmail(email.trim());
-
-      // Pre-fill form with customer_data if available
-      if (foundInvitation.customer_data) {
-        const cd = foundInvitation.customer_data;
-        if (cd.business_name) setBusinessName(cd.business_name);
-        if (cd.contact_name) setContactName(cd.contact_name);
-        if (cd.contact_phone) setContactPhone(cd.contact_phone);
-        if (cd.contact_email) setContactEmail(cd.contact_email);
-        if (cd.accounts_email) setAccountsEmail(cd.accounts_email);
-        if (cd.delivery_address) setDeliveryAddress(cd.delivery_address);
-        if (cd.delivery_instructions) setDeliveryInstructions(cd.delivery_instructions);
-      }
     }
 
     setStep('profile');
@@ -271,7 +247,21 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
 
       if (profileError) throw profileError;
 
-      // 4. Mark invitation as accepted
+      // 4. Create customer_suppliers relationship for customers
+      if (invitation?.tenant_id && (invitation?.role === 'user' || !invitation?.role)) {
+        const { error: supplierError } = await supabase.from('customer_suppliers').insert({
+          customer_id: authData.user.id,
+          tenant_id: invitation.tenant_id,
+          status: 'active',
+        });
+
+        if (supplierError) {
+          console.error('Error creating customer-supplier relationship:', supplierError);
+          // Don't throw - the user is created, they just might not see items yet
+        }
+      }
+
+      // 5. Mark invitation as accepted
       if (invitation) {
         await supabase
           .from('user_invitations')

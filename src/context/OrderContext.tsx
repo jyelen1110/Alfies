@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { Supplier, Item, Order, CartItem, Invoice, OrderStatus, User, OrderItem, CustomerSupplier, Tenant } from '../types';
 import { createXeroInvoice, checkXeroConnection } from '../services/xero';
+import { notifyNewOrder } from '../services/notifications';
 
 interface OrderState {
   suppliers: Supplier[];
@@ -1099,6 +1100,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     const completeOrder = { ...newOrder, items: items || [] };
     dispatch({ type: 'ADD_ORDER', payload: completeOrder });
+
+    // Notify owners about the new order
+    const customerName = user.business_name || user.full_name || user.email;
+    const orderNumber = newOrder.order_number || newOrder.id.substring(0, 8).toUpperCase();
+    notifyNewOrder(tenantId, orderNumber, customerName).catch((err) => {
+      console.error('Failed to send order notification:', err);
+    });
+
     return completeOrder;
   };
 
