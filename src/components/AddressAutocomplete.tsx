@@ -12,7 +12,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 
-const GOOGLE_PLACES_API_KEY = 'AIzaSyBtOxQQeMSHo3QAWZRvbLBdTiiiz02IsPs';
+// Use environment variable for API key
+const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || '';
 
 interface Prediction {
   place_id: string;
