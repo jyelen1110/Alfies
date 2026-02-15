@@ -33,26 +33,48 @@ serve(async (req) => {
   console.log('Timestamp:', new Date().toISOString());
 
   try {
-    const authHeader = req.headers.get('Authorization');
+    // Log all headers for debugging
+    console.log('Request headers:');
+    for (const [key, value] of req.headers.entries()) {
+      if (key.toLowerCase() !== 'authorization') {
+        console.log(`  ${key}: ${value}`);
+      } else {
+        console.log(`  ${key}: Bearer ***${value.slice(-10)}`);
+      }
+    }
+
+    const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
+    console.log('Auth header found:', authHeader ? 'yes' : 'no');
+
     if (!authHeader) {
       console.error('ERROR: No authorization header provided');
-      return new Response(JSON.stringify({ error: 'No authorization header' }), {
+      return new Response(JSON.stringify({ error: 'No authorization header. Please sign out and back in.' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     // Get user from Supabase auth
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+    console.log('Supabase URL:', supabaseUrl ? 'set' : 'NOT SET');
+    console.log('Supabase Anon Key:', supabaseAnonKey ? 'set' : 'NOT SET');
+
     const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      supabaseUrl ?? '',
+      supabaseAnonKey ?? '',
       { global: { headers: { Authorization: authHeader } } }
     );
 
+    console.log('Calling supabase.auth.getUser()...');
     const { data: { user }, error: authError } = await supabase.auth.getUser();
+    console.log('getUser result - user:', user?.id || 'null', 'error:', authError?.message || 'none');
+
     if (authError || !user) {
-      console.error('ERROR: Auth failed -', authError?.message || 'No user');
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      console.error('ERROR: Auth failed -', authError?.message || 'No user returned');
+      return new Response(JSON.stringify({
+        error: `Authentication failed: ${authError?.message || 'User not found'}. Please sign out and back in.`
+      }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
