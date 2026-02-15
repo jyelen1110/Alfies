@@ -1,21 +1,38 @@
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 
-// Configure notification behavior
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+// Dynamically import expo-notifications only on native platforms
+let Notifications: any = null;
+let Device: any = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    Notifications = require('expo-notifications');
+    Device = require('expo-device');
+
+    // Configure notification behavior
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+      }),
+    });
+  } catch (e) {
+    console.log('expo-notifications not available');
+  }
+}
 
 /**
  * Register for push notifications and store the token
  */
 export async function registerForPushNotifications(): Promise<string | null> {
+  // Not available on web
+  if (Platform.OS === 'web' || !Notifications || !Device) {
+    console.log('Push notifications not available on this platform');
+    return null;
+  }
+
   // Only works on physical devices
   if (!Device.isDevice) {
     console.log('Push notifications require a physical device');
@@ -152,7 +169,7 @@ export async function notifyNewOrder(
 }
 
 // Android notification channel setup
-if (Platform.OS === 'android') {
+if (Platform.OS === 'android' && Notifications) {
   Notifications.setNotificationChannelAsync('default', {
     name: 'default',
     importance: Notifications.AndroidImportance.MAX,

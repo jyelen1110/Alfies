@@ -19,10 +19,14 @@ DROP CONSTRAINT IF EXISTS integration_tokens_tenant_id_provider_key;
 ALTER TABLE public.gmail_connections
 DROP CONSTRAINT IF EXISTS gmail_connections_tenant_id_key;
 
--- Add new unique constraints based on user_id
+-- Add new unique constraints based on user_id (drop first if exists)
+ALTER TABLE public.integration_tokens
+DROP CONSTRAINT IF EXISTS integration_tokens_user_id_provider_key;
 ALTER TABLE public.integration_tokens
 ADD CONSTRAINT integration_tokens_user_id_provider_key UNIQUE (user_id, provider);
 
+ALTER TABLE public.gmail_connections
+DROP CONSTRAINT IF EXISTS gmail_connections_user_id_key;
 ALTER TABLE public.gmail_connections
 ADD CONSTRAINT gmail_connections_user_id_key UNIQUE (user_id);
 
