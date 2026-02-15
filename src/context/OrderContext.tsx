@@ -382,13 +382,27 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   };
 
   const loadInvoices = async () => {
-    if (!tenant) return;
-    const { data, error } = await supabase
+    if (!user) return;
+
+    let query = supabase
       .from('invoices')
       .select('*, supplier:suppliers(id, name), items:invoice_items(*)')
-      .eq('tenant_id', tenant.id)
       .order('invoice_date', { ascending: false })
       .range(0, 999);
+
+    // Customers only see invoices shared with them after Xero export
+    if (user.role === 'user') {
+      query = query
+        .eq('customer_id', user.id)
+        .not('shared_with_customer_at', 'is', null);
+    } else if (tenant) {
+      // Owners see all invoices for their tenant
+      query = query.eq('tenant_id', tenant.id);
+    } else {
+      return;
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error loading invoices:', error);
@@ -689,6 +703,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         ...orderData,
         tenant_id: tenant.id,
         created_by: customerId, // The customer on whose behalf the order is created
+        customer_id: customerId, // Link customer to order for Xero export
         status,
         approved_by: user.id, // The owner who created/approved
         approved_at: new Date().toISOString(),
@@ -896,6 +911,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         tenant_id: tenant.id,
         supplier_id: order.supplier_id,
         order_id: order.id,
+        customer_id: order.customer_id, // Link invoice to customer for visibility
         invoice_number: invoiceNumber,
         invoice_date: new Date().toISOString().split('T')[0],
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -1067,6 +1083,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         ...orderData,
         tenant_id: tenantId, // Use the supplier's tenant
         created_by: user.id,
+        customer_id: user.id, // Link customer to order for Xero export
         status,
       })
       .select()

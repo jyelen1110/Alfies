@@ -182,6 +182,7 @@ export interface Invoice {
   tenant_id: string;
   supplier_id: string;
   order_id?: string;
+  customer_id?: string;
   invoice_number: string;
   invoice_date: string;
   due_date?: string;
@@ -196,6 +197,7 @@ export interface Invoice {
   exported_at?: string;
   pdf_storage_path?: string;
   export_error?: string;
+  shared_with_customer_at?: string;
   is_archived?: boolean;
   notes?: string;
   created_at?: string;

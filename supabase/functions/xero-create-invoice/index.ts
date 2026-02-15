@@ -526,6 +526,8 @@ serve(async (req) => {
       xero_invoice_id: createdInvoice.InvoiceID,
       exported_at: new Date().toISOString(),
       status: 'exported',
+      customer_id: order.customer_id, // Ensure customer_id is set for customer visibility
+      shared_with_customer_at: new Date().toISOString(), // Share with customer after successful export
     };
 
     if (pdfStoragePath) {
