@@ -488,9 +488,9 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
                 />
               </View>
 
-              {/* Contact Name */}
+              {/* Name */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Contact Name *</Text>
+                <Text style={styles.label}>Name *</Text>
                 <TextInput
                   style={styles.textInput}
                   placeholder="Primary contact person"
@@ -502,9 +502,9 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
                 />
               </View>
 
-              {/* Contact Phone */}
+              {/* Phone */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Contact Phone *</Text>
+                <Text style={styles.label}>Phone *</Text>
                 <TextInput
                   style={styles.textInput}
                   placeholder="Contact phone number"

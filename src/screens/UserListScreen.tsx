@@ -472,26 +472,12 @@ export default function UserListScreen() {
 
       if (error) throw error;
 
-      // Send invitation email automatically
-      const emailSent = await sendInvitationEmail(inviteEmail.trim().toLowerCase());
-
       setInviteModalVisible(false);
       fetchData();
 
-      if (emailSent) {
-        Alert.alert(
-          'Invitation Sent',
-          `An invitation email has been sent to ${inviteEmail.trim()}.`
-        );
-      } else {
-        // Email failed but invitation was created - show manual options
-        setSelectedInvitation(data);
-        setInvitationModalVisible(true);
-        Alert.alert(
-          'Invitation Created',
-          'The invitation was created but the email could not be sent automatically. You can share the invitation manually.'
-        );
-      }
+      // Show invitation sharing options
+      setSelectedInvitation(data);
+      setInvitationModalVisible(true);
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to create invitation');
     } finally {
@@ -1412,24 +1398,9 @@ export default function UserListScreen() {
                   </View>
                 </View>
 
-                <TouchableOpacity
-                  style={[styles.primaryButton, sendingEmail && styles.buttonDisabled]}
-                  onPress={resendInviteEmail}
-                  disabled={sendingEmail}
-                >
-                  {sendingEmail ? (
-                    <ActivityIndicator size="small" color={theme.colors.white} />
-                  ) : (
-                    <>
-                      <Ionicons name="mail" size={18} color={theme.colors.white} />
-                      <Text style={styles.primaryButtonText}>Send Email Invitation</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.secondaryButton} onPress={shareInvitation}>
-                  <Ionicons name="share-outline" size={18} color={theme.colors.accent} />
-                  <Text style={styles.secondaryButtonText}>Share Invitation</Text>
+                <TouchableOpacity style={styles.primaryButton} onPress={shareInvitation}>
+                  <Ionicons name="share-outline" size={18} color={theme.colors.white} />
+                  <Text style={styles.primaryButtonText}>Share Invitation</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.tertiaryButton} onPress={copyInviteText}>
