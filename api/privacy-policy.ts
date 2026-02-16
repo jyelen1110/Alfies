@@ -1,0 +1,146 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+
+export default function handler(req: VercelRequest, res: VercelResponse) {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - Easy Ordering</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f9fafb;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1565A0;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .last-updated {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #1565A0;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        p {
+            margin-bottom: 15px;
+        }
+        ul {
+            margin-left: 25px;
+            margin-bottom: 15px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        a {
+            color: #1565A0;
+        }
+        .contact {
+            background: #f0f7ff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Privacy Policy</h1>
+        <p class="last-updated">Last updated: February 2024</p>
+
+        <p>Easy Ordering ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information when you use our mobile application.</p>
+
+        <h2>Information We Collect</h2>
+        <p>We collect information that you provide directly to us when using the Easy Ordering app:</p>
+        <ul>
+            <li><strong>Account Information:</strong> Name, email address, phone number, and business name when you create an account.</li>
+            <li><strong>Address Information:</strong> Delivery addresses you provide for orders.</li>
+            <li><strong>Order Information:</strong> Details of orders you place, including items, quantities, and order history.</li>
+            <li><strong>Payment Information:</strong> We do not store payment card details. Payments are processed through secure third-party providers.</li>
+        </ul>
+
+        <h2>How We Use Your Information</h2>
+        <p>We use the information we collect to:</p>
+        <ul>
+            <li>Create and manage your account</li>
+            <li>Process and fulfill your orders</li>
+            <li>Communicate with you about orders and updates</li>
+            <li>Provide customer support</li>
+            <li>Improve our app and services</li>
+            <li>Send you notifications about your orders (with your permission)</li>
+        </ul>
+
+        <h2>Information Sharing</h2>
+        <p>We do not sell, trade, or rent your personal information to third parties. We may share your information only in the following circumstances:</p>
+        <ul>
+            <li><strong>With Suppliers:</strong> Order details are shared with suppliers to fulfill your orders.</li>
+            <li><strong>Service Providers:</strong> We use third-party services (such as cloud hosting and analytics) that help us operate the app.</li>
+            <li><strong>Legal Requirements:</strong> We may disclose information if required by law or to protect our rights.</li>
+        </ul>
+
+        <h2>Data Security</h2>
+        <p>We implement appropriate security measures to protect your personal information. Your data is stored securely using industry-standard encryption and security practices.</p>
+
+        <h2>Data Retention</h2>
+        <p>We retain your personal information for as long as your account is active or as needed to provide you services. You may request deletion of your account and associated data at any time.</p>
+
+        <h2>Your Rights</h2>
+        <p>You have the right to:</p>
+        <ul>
+            <li>Access the personal information we hold about you</li>
+            <li>Request correction of inaccurate information</li>
+            <li>Request deletion of your account and data</li>
+            <li>Opt out of marketing communications</li>
+        </ul>
+
+        <h2>Push Notifications</h2>
+        <p>With your permission, we may send push notifications about order updates and important information. You can disable notifications at any time through your device settings.</p>
+
+        <h2>Third-Party Services</h2>
+        <p>Our app uses the following third-party services:</p>
+        <ul>
+            <li><strong>Google Places API:</strong> For address autocomplete functionality</li>
+            <li><strong>Supabase:</strong> For secure data storage and authentication</li>
+            <li><strong>Xero:</strong> For invoice management (business users only)</li>
+        </ul>
+
+        <h2>Children's Privacy</h2>
+        <p>Our app is not intended for children under 13 years of age. We do not knowingly collect personal information from children.</p>
+
+        <h2>Changes to This Policy</h2>
+        <p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new policy on this page and updating the "Last updated" date.</p>
+
+        <div class="contact">
+            <h2>Contact Us</h2>
+            <p>If you have any questions about this Privacy Policy or our data practices, please contact us at:</p>
+            <p><strong>Email:</strong> <a href="mailto:yelenjason@gmail.com">yelenjason@gmail.com</a></p>
+        </div>
+    </div>
+</body>
+</html>`;
+
+  res.setHeader('Content-Type', 'text/html');
+  res.status(200).send(html);
+}
