@@ -32,6 +32,7 @@ export default async function handler(request: Request) {
       method: 'GET',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
       },
     });
 
