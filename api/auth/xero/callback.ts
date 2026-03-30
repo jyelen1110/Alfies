@@ -38,20 +38,26 @@ export default async function handler(request: Request) {
 
     // Check if the response is HTML (success or error page)
     const contentType = response.headers.get('content-type');
+    console.log('xero-callback content-type:', contentType, 'status:', response.status);
+
     if (contentType?.includes('text/html')) {
       const html = await response.text();
+      console.log('Received HTML, checking for success...');
 
       // Check if it's a success page (contains "Xero Connected!")
       if (html.includes('Xero Connected!')) {
+        console.log('Success page detected, redirecting...');
         // Extract org name if possible
         const orgMatch = html.match(/<span class="org-name">([^<]+)<\/span>/);
         const orgName = orgMatch ? orgMatch[1] : '';
-        return Response.redirect(`${appUrl}?xero_connected=true&org=${encodeURIComponent(orgName)}`);
+        const redirectUrl = `${appUrl}?xero_connected=true&org=${encodeURIComponent(orgName)}`;
+        console.log('Redirecting to:', redirectUrl);
+        return Response.redirect(redirectUrl, 302);
       } else {
         // It's an error page
         const errorMatch = html.match(/<p>([^<]+)<\/p>/);
         const errorMsg = errorMatch ? errorMatch[1] : 'Connection failed';
-        return Response.redirect(`${appUrl}?xero_error=${encodeURIComponent(errorMsg)}`);
+        return Response.redirect(`${appUrl}?xero_error=${encodeURIComponent(errorMsg)}`, 302);
       }
     }
 
