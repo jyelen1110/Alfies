@@ -43,10 +43,15 @@ export default async function handler(request: Request) {
 
     const result = await response.json();
 
+    console.log('gmail-callback response:', response.status, result);
+
     if (response.ok && result.success) {
       return Response.redirect(`${appUrl}?gmail_connected=true&email=${encodeURIComponent(result.email || '')}`);
     } else {
-      return Response.redirect(`${appUrl}?gmail_error=${encodeURIComponent(result.error || 'unknown')}`);
+      const errorMsg = result.error || 'unknown';
+      const debugInfo = result.debug ? JSON.stringify(result.debug) : '';
+      console.error('gmail-callback error:', errorMsg, debugInfo);
+      return Response.redirect(`${appUrl}?gmail_error=${encodeURIComponent(errorMsg)}`);
     }
   } catch (err) {
     return Response.redirect(`${appUrl}?gmail_error=callback_failed`);

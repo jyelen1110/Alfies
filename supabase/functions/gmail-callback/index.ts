@@ -30,9 +30,12 @@ serve(async (req) => {
     let userId: string | null = null
     try {
       const decoded = JSON.parse(atob(state))
+      console.log('Decoded state:', decoded)
       tenantId = decoded.tenantId
       userId = decoded.userId || null
-    } catch {
+      console.log('tenantId:', tenantId, 'userId:', userId)
+    } catch (err) {
+      console.error('State decode error:', err)
       return new Response(
         JSON.stringify({ error: 'Invalid state parameter' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -40,8 +43,12 @@ serve(async (req) => {
     }
 
     if (!userId) {
+      console.error('No userId in state, decoded was:', JSON.stringify({ tenantId, userId }))
       return new Response(
-        JSON.stringify({ error: 'User authentication required' }),
+        JSON.stringify({
+          error: 'User authentication required - no userId in state',
+          debug: { tenantId, userId, stateReceived: state.substring(0, 50) }
+        }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
