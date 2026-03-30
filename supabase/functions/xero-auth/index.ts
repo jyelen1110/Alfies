@@ -19,9 +19,11 @@ serve(async (req) => {
     }
 
     // Get user from Supabase auth
+    // Use JWT_ANON_KEY for token verification (not the publishable key)
+    const jwtKey = Deno.env.get('JWT_ANON_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      jwtKey,
       { global: { headers: { Authorization: authHeader } } }
     );
 

@@ -67,7 +67,6 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
   // Update form when item changes
   useMemo(() => {
     if (item) {
-      // Use categories array if available, otherwise fall back to single category
       const itemCategories = item.categories && item.categories.length > 0
         ? item.categories
         : (item.category ? [item.category] : []);
@@ -92,7 +91,6 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
       });
       setLocalImageUri(null);
     } else if (isNew) {
-      // Reset form for new item
       setFormData({
         name: '',
         categories: [],
@@ -124,10 +122,8 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
     setFormData(prev => {
       const currentCategories = prev.categories;
       if (currentCategories.includes(category)) {
-        // Remove category
         return { ...prev, categories: currentCategories.filter(c => c !== category) };
       } else {
-        // Add category
         return { ...prev, categories: [...currentCategories, category] };
       }
     });
@@ -146,16 +142,12 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
         setLocalImageUri(asset.uri);
         setUploadingImage(true);
 
-        // Upload to Supabase Storage
         const fileName = `item-${Date.now()}-${Math.random().toString(36).substring(7)}`;
         const fileExt = asset.uri.split('.').pop() || 'jpg';
         const filePath = `${fileName}.${fileExt}`;
 
-        // Fetch the image as blob
         const response = await fetch(asset.uri);
         const blob = await response.blob();
-
-        // Convert blob to ArrayBuffer for upload
         const arrayBuffer = await new Response(blob).arrayBuffer();
 
         const { error: uploadError } = await supabase.storage
@@ -170,14 +162,7 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
           Alert.alert('Error', 'Failed to upload image');
           setLocalImageUri(null);
         } else {
-          // Get public URL
-          const { data: urlData } = supabase.storage
-            .from('item-images')
-            .getPublicUrl(filePath);
-
-          setFormData(prev => ({ ...prev, image_path: filePath }));
-          // Clear image_url since device image takes precedence
-          setFormData(prev => ({ ...prev, image_url: '' }));
+          setFormData(prev => ({ ...prev, image_path: filePath, image_url: '' }));
         }
         setUploadingImage(false);
       }
@@ -206,7 +191,6 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
   const handleSave = () => {
     if (!isNew && !item) return;
 
-    // Validate required fields for new items
     if (isNew && !formData.name) {
       Alert.alert('Error', 'Please enter an item name');
       return;
@@ -222,9 +206,7 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
       tenant_id: item?.tenant_id || '',
       supplier_id: formData.supplier_id || item?.supplier_id || '',
       name: formData.name,
-      // Keep single category for backwards compatibility (use first selected)
       category: formData.categories.length > 0 ? formData.categories[0] : undefined,
-      // Store full categories array
       categories: formData.categories.length > 0 ? formData.categories : undefined,
       country_of_origin: formData.country_of_origin || undefined,
       size: formData.size || undefined,
@@ -259,7 +241,6 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
           </View>
 
           <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-            {/* Basic Info Section */}
             <Text style={styles.sectionTitle}>Basic Information</Text>
 
             <Text style={styles.inputLabel}>Name</Text>
@@ -338,7 +319,6 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
               ))}
             </View>
 
-            {/* Size & Packaging Section */}
             <Text style={styles.sectionTitle}>Size & Packaging</Text>
 
             <View style={styles.rowInputs}>
@@ -372,7 +352,6 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
               keyboardType="number-pad"
             />
 
-            {/* Pricing Section */}
             <Text style={styles.sectionTitle}>Pricing</Text>
 
             <View style={styles.rowInputs}>
@@ -430,7 +409,6 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
               keyboardType="number-pad"
             />
 
-            {/* Xero Integration Section */}
             <Text style={styles.sectionTitle}>Xero Integration</Text>
 
             <Text style={styles.inputLabel}>Xero Account Code</Text>
@@ -449,10 +427,8 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
               placeholder="Xero item code"
             />
 
-            {/* Image Section */}
             <Text style={styles.sectionTitle}>Image</Text>
 
-            {/* Image Preview */}
             {getImageSource() && (
               <View style={styles.imagePreviewContainer}>
                 <Image source={getImageSource()!} style={styles.imagePreview} />
@@ -464,7 +440,6 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
               </View>
             )}
 
-            {/* Upload from Device */}
             <TouchableOpacity
               style={[styles.uploadButton, uploadingImage && styles.uploadButtonDisabled]}
               onPress={pickImage}
@@ -495,7 +470,6 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
               </>
             )}
 
-            {/* Spacer for scroll */}
             <View style={{ height: 20 }} />
           </ScrollView>
 
@@ -521,6 +495,68 @@ function EditItemModal({ visible, item, supplierName, suppliers, isNew, onClose,
   );
 }
 
+// Filter Modal Component
+interface FilterModalProps {
+  visible: boolean;
+  title: string;
+  options: { id: string; label: string; count?: number }[];
+  selectedIds: Set<string>;
+  onToggle: (id: string) => void;
+  onClose: () => void;
+  onClear: () => void;
+}
+
+function FilterModal({ visible, title, options, selectedIds, onToggle, onClose, onClear }: FilterModalProps) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.filterModalOverlay}>
+        <View style={styles.filterModalContent}>
+          <View style={styles.filterModalHeader}>
+            <Text style={styles.filterModalTitle}>{title}</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={24} color={theme.colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.filterModalBody}>
+            {options.map((option) => {
+              const isSelected = selectedIds.has(option.id);
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  style={styles.filterOption}
+                  onPress={() => onToggle(option.id)}
+                >
+                  <Ionicons
+                    name={isSelected ? 'checkbox' : 'square-outline'}
+                    size={24}
+                    color={isSelected ? theme.colors.accent : theme.colors.textMuted}
+                  />
+                  <Text style={[styles.filterOptionText, isSelected && styles.filterOptionTextActive]}>
+                    {option.label}
+                  </Text>
+                  {option.count !== undefined && (
+                    <Text style={styles.filterOptionCount}>({option.count})</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          <View style={styles.filterModalFooter}>
+            <TouchableOpacity style={styles.filterClearButton} onPress={onClear}>
+              <Text style={styles.filterClearButtonText}>Clear All</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.filterApplyButton} onPress={onClose}>
+              <Text style={styles.filterApplyButtonText}>Apply</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function MasterItemListScreen() {
   const {
     state,
@@ -532,8 +568,8 @@ export default function MasterItemListScreen() {
   const { user } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedSupplierIds, setSelectedSupplierIds] = useState<Set<string>>(new Set());
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -541,6 +577,11 @@ export default function MasterItemListScreen() {
   const [sortBy, setSortBy] = useState<'name' | 'price' | 'category'>('name');
   const [sortAsc, setSortAsc] = useState(true);
   const [showInactive, setShowInactive] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+
+  // Filter modals
+  const [showSupplierFilter, setShowSupplierFilter] = useState(false);
+  const [showCategoryFilter, setShowCategoryFilter] = useState(false);
 
   // AI Import state
   const [showImportModal, setShowImportModal] = useState(false);
@@ -551,7 +592,6 @@ export default function MasterItemListScreen() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importSupplierId, setImportSupplierId] = useState<string>('');
 
-  // Pull to refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -561,16 +601,38 @@ export default function MasterItemListScreen() {
     }
   }, [loadAllData]);
 
+  // Item stats for filter counts
+  const itemStats = useMemo(() => {
+    const byCategory: Record<string, number> = {};
+    const bySupplier: Record<string, number> = {};
+
+    state.items.forEach((item) => {
+      if (item.status === 'active') {
+        const categories = item.categories && item.categories.length > 0
+          ? item.categories
+          : (item.category ? [item.category] : ['Uncategorized']);
+        categories.forEach(cat => {
+          byCategory[cat] = (byCategory[cat] || 0) + 1;
+        });
+        bySupplier[item.supplier_id] = (bySupplier[item.supplier_id] || 0) + 1;
+      }
+    });
+
+    const inactiveCount = state.items.filter(i => i.status === 'inactive' || i.status === 'sold_out').length;
+    const activeCount = state.items.filter(i => i.status === 'active').length;
+
+    return { byCategory, bySupplier, total: activeCount, inactiveCount };
+  }, [state.items]);
+
   // Filtered and sorted items
   const filteredItems = useMemo(() => {
     const filtered = state.items.filter((item) => {
-      const matchesSupplier = !selectedSupplierId || item.supplier_id === selectedSupplierId;
-      // Check categories array first, then fall back to single category
+      const matchesSupplier = selectedSupplierIds.size === 0 || selectedSupplierIds.has(item.supplier_id);
       const itemCategories = item.categories && item.categories.length > 0
         ? item.categories
         : (item.category ? [item.category] : []);
-      const matchesCategory =
-        !selectedCategory || selectedCategory === 'All' || itemCategories.includes(selectedCategory);
+      const matchesCategory = selectedCategories.size === 0 ||
+        itemCategories.some(cat => selectedCategories.has(cat));
       const matchesSearch =
         !searchQuery ||
         item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -581,7 +643,6 @@ export default function MasterItemListScreen() {
       return matchesSupplier && matchesSearch && matchesCategory && matchesStatus;
     });
 
-    // Sort items
     return filtered.sort((a, b) => {
       let comparison = 0;
       switch (sortBy) {
@@ -597,36 +658,7 @@ export default function MasterItemListScreen() {
       }
       return sortAsc ? comparison : -comparison;
     });
-  }, [state.items, selectedSupplierId, selectedCategory, searchQuery, sortBy, sortAsc, showInactive]);
-
-  // Group items by category for summary
-  const itemStats = useMemo(() => {
-    const byCategory: Record<string, number> = {};
-    const bySupplier: Record<string, number> = {};
-
-    state.items.forEach((item) => {
-      if (item.status === 'active') {
-        // Get all categories for the item
-        const categories = item.categories && item.categories.length > 0
-          ? item.categories
-          : (item.category ? [item.category] : ['Uncategorized']);
-        // Count item in each category it belongs to
-        categories.forEach(cat => {
-          byCategory[cat] = (byCategory[cat] || 0) + 1;
-        });
-        bySupplier[item.supplier_id] = (bySupplier[item.supplier_id] || 0) + 1;
-      }
-    });
-
-    const inactiveCount = state.items.filter(i => i.status === 'inactive' || i.status === 'sold_out').length;
-
-    return {
-      byCategory,
-      bySupplier,
-      total: state.items.filter(i => i.status === 'active').length,
-      inactiveCount,
-    };
-  }, [state.items]);
+  }, [state.items, selectedSupplierIds, selectedCategories, searchQuery, sortBy, sortAsc, showInactive]);
 
   const handleEditItem = (item: Item) => {
     setIsCreatingNew(false);
@@ -636,7 +668,6 @@ export default function MasterItemListScreen() {
 
   const handleSaveItem = async (updatedItem: Item) => {
     if (isCreatingNew) {
-      // Create new item
       const result = await createItem(updatedItem);
       if (result) {
         setShowEditModal(false);
@@ -646,7 +677,6 @@ export default function MasterItemListScreen() {
         Alert.alert('Error', 'Failed to create item. Please try again.');
       }
     } else {
-      // Update existing item
       await updateItem(updatedItem);
       setShowEditModal(false);
       setEditingItem(null);
@@ -655,7 +685,6 @@ export default function MasterItemListScreen() {
 
   const handleDeleteItem = async (item: Item) => {
     const confirmDelete = () => {
-      // Delete the item from database
       supabase
         .from('items')
         .delete()
@@ -670,7 +699,7 @@ export default function MasterItemListScreen() {
           } else {
             setShowEditModal(false);
             setEditingItem(null);
-            loadAllData(); // Refresh the list
+            loadAllData();
             if (Platform.OS === 'web') {
               window.alert('Deleted\n\nItem has been permanently deleted.');
             } else {
@@ -681,7 +710,7 @@ export default function MasterItemListScreen() {
     };
 
     if (Platform.OS === 'web') {
-      if (window.confirm(`Delete "${item.name}"?\n\nThis action cannot be undone. The item will be permanently removed.`)) {
+      if (window.confirm(`Delete "${item.name}"?\n\nThis action cannot be undone.`)) {
         confirmDelete();
       }
     } else {
@@ -722,26 +751,17 @@ export default function MasterItemListScreen() {
       setImportProcessing(true);
       setImportError(null);
 
-      // Read file as base64
       const fileContent = await FileSystem.readAsStringAsync(file.uri, {
         encoding: 'base64',
       });
 
-      // Determine file type
       const fileType = file.mimeType?.includes('image') ? 'image' :
                        file.mimeType?.includes('pdf') ? 'pdf-image' : 'text';
 
-      // Call the parse-document Edge Function
       const response = await fetch(`${supabaseUrl}/functions/v1/parse-document`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          fileContent,
-          fileType,
-          pageNumber: 1,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileContent, fileType, pageNumber: 1 }),
       });
 
       const data = await response.json();
@@ -752,7 +772,6 @@ export default function MasterItemListScreen() {
 
       if (data.items && data.items.length > 0) {
         setImportedItems(data.items);
-        // Select all items by default
         setSelectedImportItems(new Set(data.items.map((_: any, i: number) => i)));
         setImportStep('review');
       } else {
@@ -822,15 +841,14 @@ export default function MasterItemListScreen() {
   };
 
   const clearFilters = () => {
-    setSelectedSupplierId(null);
-    setSelectedCategory(null);
+    setSelectedSupplierIds(new Set());
+    setSelectedCategories(new Set());
     setSearchQuery('');
   };
 
-  const hasActiveFilters = selectedSupplierId || selectedCategory || searchQuery;
+  const hasActiveFilters = selectedSupplierIds.size > 0 || selectedCategories.size > 0 || searchQuery;
 
   const toggleSort = () => {
-    // Cycle through: name asc -> name desc -> price asc -> price desc -> category asc -> category desc
     if (sortBy === 'name' && sortAsc) {
       setSortAsc(false);
     } else if (sortBy === 'name' && !sortAsc) {
@@ -854,7 +872,6 @@ export default function MasterItemListScreen() {
     return `${labels[sortBy]} ${sortAsc ? '↑' : '↓'}`;
   };
 
-  // Handle adding a new item
   const handleAddNewItem = useCallback(() => {
     if (state.suppliers.length === 0) {
       Alert.alert('No Suppliers', 'Please add a supplier first before creating items.');
@@ -865,7 +882,45 @@ export default function MasterItemListScreen() {
     setShowEditModal(true);
   }, [state.suppliers]);
 
-  // Loading state
+  // Toggle supplier filter
+  const toggleSupplierFilter = (supplierId: string) => {
+    setSelectedSupplierIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(supplierId)) {
+        newSet.delete(supplierId);
+      } else {
+        newSet.add(supplierId);
+      }
+      return newSet;
+    });
+  };
+
+  // Toggle category filter
+  const toggleCategoryFilter = (category: string) => {
+    setSelectedCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(category)) {
+        newSet.delete(category);
+      } else {
+        newSet.add(category);
+      }
+      return newSet;
+    });
+  };
+
+  // Filter options
+  const supplierOptions = state.suppliers.map(s => ({
+    id: s.id,
+    label: s.name,
+    count: itemStats.bySupplier[s.id] || 0,
+  }));
+
+  const categoryOptions = CATEGORIES.filter(c => c !== 'All').map(cat => ({
+    id: cat,
+    label: cat,
+    count: itemStats.byCategory[cat] || 0,
+  }));
+
   if (state.isLoading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
@@ -874,10 +929,8 @@ export default function MasterItemListScreen() {
     );
   }
 
-  // Render a single item card
   const renderItem = ({ item }: { item: Item }) => {
     const supplierName = getSupplierName(item.supplier_id);
-    // Check for actual image content (not empty strings)
     const hasStoredImage = item.image_path && item.image_path.trim().length > 0;
     const hasUrlImage = item.image_url && item.image_url.trim().length > 0;
     const imageUri = hasStoredImage
@@ -892,12 +945,10 @@ export default function MasterItemListScreen() {
         onPress={() => handleEditItem(item)}
         activeOpacity={0.7}
       >
-        {/* Image - only show if there is a valid image URI */}
         {imageUri && (
           <Image source={{ uri: imageUri }} style={styles.itemImage} />
         )}
 
-        {/* Status badge for inactive items */}
         {item.status !== 'active' && (
           <View style={styles.inactiveItemBadge}>
             <Text style={styles.inactiveItemBadgeText}>
@@ -906,19 +957,14 @@ export default function MasterItemListScreen() {
           </View>
         )}
 
-        {/* Info */}
-        <Text style={styles.itemName} numberOfLines={2}>
-          {item.name}
-        </Text>
+        <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
         <Text style={styles.itemSupplier} numberOfLines={1}>{supplierName}</Text>
 
-        {/* Price */}
         <View style={styles.itemPriceRow}>
           <Text style={styles.itemPrice}>${item.wholesale_price.toFixed(2)}</Text>
           {item.size && <Text style={styles.itemUnit}> / {item.size}</Text>}
         </View>
 
-        {/* Category badges */}
         {(() => {
           const categories = item.categories && item.categories.length > 0
             ? item.categories
@@ -945,42 +991,24 @@ export default function MasterItemListScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header with stats and import button */}
-      <View style={styles.headerRow}>
-        {/* Stats bar */}
-        <View style={styles.statsBar}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{itemStats.total}</Text>
-            <Text style={styles.statLabel}>Items</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{Object.keys(itemStats.byCategory).length}</Text>
-            <Text style={styles.statLabel}>Categories</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{state.suppliers.length}</Text>
-            <Text style={styles.statLabel}>Suppliers</Text>
-          </View>
-        </View>
-
-        {/* Import button */}
-        <TouchableOpacity
-          style={styles.importButton}
-          onPress={handleOpenImport}
-        >
-          <Ionicons name="cloud-upload-outline" size={20} color={theme.colors.accent} />
-          <Text style={styles.importButtonText}>Import</Text>
+      {/* Top action row: Import, Add, Edit */}
+      <View style={styles.actionRow}>
+        <TouchableOpacity style={styles.actionButton} onPress={handleOpenImport}>
+          <Ionicons name="cloud-upload-outline" size={18} color={theme.colors.accent} />
+          <Text style={styles.actionButtonText}>Import</Text>
         </TouchableOpacity>
 
-        {/* Add button */}
+        <TouchableOpacity style={[styles.actionButton, styles.actionButtonPrimary]} onPress={handleAddNewItem}>
+          <Ionicons name="add" size={18} color={theme.colors.white} />
+          <Text style={styles.actionButtonTextPrimary}>Add</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity
-          style={styles.addButton}
-          onPress={handleAddNewItem}
+          style={[styles.actionButton, isEditMode && styles.actionButtonActive]}
+          onPress={() => setIsEditMode(!isEditMode)}
         >
-          <Ionicons name="add" size={20} color={theme.colors.white} />
-          <Text style={styles.addButtonText}>Add</Text>
+          <Ionicons name="create-outline" size={18} color={isEditMode ? theme.colors.white : theme.colors.accent} />
+          <Text style={[styles.actionButtonText, isEditMode && styles.actionButtonTextPrimary]}>Edit</Text>
         </TouchableOpacity>
       </View>
 
@@ -1002,86 +1030,30 @@ export default function MasterItemListScreen() {
         )}
       </View>
 
-      {/* Supplier chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.supplierChipsContainer}
-        style={styles.supplierChipsScroll}
-      >
+      {/* Filter buttons row */}
+      <View style={styles.filterButtonRow}>
         <TouchableOpacity
-          style={[styles.supplierChip, !selectedSupplierId && styles.supplierChipActive]}
-          onPress={() => setSelectedSupplierId(null)}
+          style={[styles.filterButton, selectedSupplierIds.size > 0 && styles.filterButtonActive]}
+          onPress={() => setShowSupplierFilter(true)}
         >
-          <Ionicons
-            name="storefront-outline"
-            size={14}
-            color={!selectedSupplierId ? theme.colors.white : theme.colors.text}
-          />
-          <Text
-            style={[
-              styles.supplierChipText,
-              !selectedSupplierId && styles.supplierChipTextActive,
-            ]}
-          >
-            All Suppliers
+          <Ionicons name="storefront-outline" size={16} color={selectedSupplierIds.size > 0 ? theme.colors.white : theme.colors.text} />
+          <Text style={[styles.filterButtonText, selectedSupplierIds.size > 0 && styles.filterButtonTextActive]}>
+            {selectedSupplierIds.size > 0 ? `Suppliers (${selectedSupplierIds.size})` : 'All Suppliers'}
           </Text>
+          <Ionicons name="chevron-down" size={16} color={selectedSupplierIds.size > 0 ? theme.colors.white : theme.colors.textMuted} />
         </TouchableOpacity>
-        {state.suppliers.map((supplier: Supplier) => (
-          <TouchableOpacity
-            key={supplier.id}
-            style={[
-              styles.supplierChip,
-              selectedSupplierId === supplier.id && styles.supplierChipActive,
-            ]}
-            onPress={() =>
-              setSelectedSupplierId(
-                selectedSupplierId === supplier.id ? null : supplier.id
-              )
-            }
-          >
-            <Text
-              style={[
-                styles.supplierChipText,
-                selectedSupplierId === supplier.id && styles.supplierChipTextActive,
-              ]}
-              numberOfLines={1}
-            >
-              {supplier.name} ({itemStats.bySupplier[supplier.id] || 0})
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
 
-      {/* Category pills */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.categoryPillsContainer}
-        style={styles.categoryPillsScroll}
-      >
-        {CATEGORIES.map((category) => {
-          const isActive =
-            category === 'All' ? !selectedCategory || selectedCategory === 'All' : selectedCategory === category;
-          const count = category === 'All' ? itemStats.total : (itemStats.byCategory[category] || 0);
-          return (
-            <TouchableOpacity
-              key={category}
-              style={[styles.categoryPill, isActive && styles.categoryPillActive]}
-              onPress={() => setSelectedCategory(category === 'All' ? null : category)}
-            >
-              <Text
-                style={[
-                  styles.categoryPillText,
-                  isActive && styles.categoryPillTextActive,
-                ]}
-              >
-                {category} ({count})
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+        <TouchableOpacity
+          style={[styles.filterButton, selectedCategories.size > 0 && styles.filterButtonActive]}
+          onPress={() => setShowCategoryFilter(true)}
+        >
+          <Ionicons name="pricetag-outline" size={16} color={selectedCategories.size > 0 ? theme.colors.white : theme.colors.text} />
+          <Text style={[styles.filterButtonText, selectedCategories.size > 0 && styles.filterButtonTextActive]}>
+            {selectedCategories.size > 0 ? `Categories (${selectedCategories.size})` : 'All Categories'}
+          </Text>
+          <Ionicons name="chevron-down" size={16} color={selectedCategories.size > 0 ? theme.colors.white : theme.colors.textMuted} />
+        </TouchableOpacity>
+      </View>
 
       {/* Status filter (Active/Inactive) */}
       <View style={styles.statusFilterRow}>
@@ -1143,9 +1115,7 @@ export default function MasterItemListScreen() {
             <Ionicons name="cube-outline" size={64} color={theme.colors.border} />
             <Text style={styles.emptyText}>No items found</Text>
             <Text style={styles.emptySubtext}>
-              {hasActiveFilters
-                ? 'Try adjusting your filters'
-                : 'Items will appear here once added'}
+              {hasActiveFilters ? 'Try adjusting your filters' : 'Items will appear here once added'}
             </Text>
           </View>
         }
@@ -1167,6 +1137,28 @@ export default function MasterItemListScreen() {
         onDelete={handleDeleteItem}
       />
 
+      {/* Supplier Filter Modal */}
+      <FilterModal
+        visible={showSupplierFilter}
+        title="Filter by Suppliers"
+        options={supplierOptions}
+        selectedIds={selectedSupplierIds}
+        onToggle={toggleSupplierFilter}
+        onClose={() => setShowSupplierFilter(false)}
+        onClear={() => setSelectedSupplierIds(new Set())}
+      />
+
+      {/* Category Filter Modal */}
+      <FilterModal
+        visible={showCategoryFilter}
+        title="Filter by Categories"
+        options={categoryOptions}
+        selectedIds={selectedCategories}
+        onToggle={toggleCategoryFilter}
+        onClose={() => setShowCategoryFilter(false)}
+        onClear={() => setSelectedCategories(new Set())}
+      />
+
       {/* AI Import Modal */}
       <Modal
         visible={showImportModal}
@@ -1174,135 +1166,117 @@ export default function MasterItemListScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setShowImportModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setShowImportModal(false)}>
-                <Ionicons name="close" size={24} color={theme.colors.text} />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Import Items (AI)</Text>
-              <View style={{ width: 24 }} />
-            </View>
+        <View style={styles.importModalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowImportModal(false)}>
+              <Ionicons name="close" size={24} color={theme.colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Import Items (AI)</Text>
+            <View style={{ width: 24 }} />
+          </View>
 
-            <ScrollView style={styles.modalBody}>
-              {importStep === 'select' && (
-                <View style={styles.importSelectStep}>
-                  <Ionicons name="document-text-outline" size={64} color={theme.colors.accent} />
-                  <Text style={styles.importTitle}>Import from Document</Text>
-                  <Text style={styles.importDescription}>
-                    Upload a PDF, image, or spreadsheet and AI will extract product information automatically.
-                  </Text>
+          <ScrollView style={styles.modalBody}>
+            {importStep === 'select' && (
+              <View style={styles.importSelectStep}>
+                <Ionicons name="document-text-outline" size={64} color={theme.colors.accent} />
+                <Text style={styles.importTitle}>Import from Document</Text>
+                <Text style={styles.importDescription}>
+                  Upload a PDF, image, or spreadsheet and AI will extract product information automatically.
+                </Text>
 
-                  <Text style={styles.inputLabel}>Select Supplier</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.supplierSelect}>
-                    {state.suppliers.map((supplier) => (
-                      <TouchableOpacity
-                        key={supplier.id}
-                        style={[
-                          styles.supplierOption,
-                          importSupplierId === supplier.id && styles.supplierOptionActive,
-                        ]}
-                        onPress={() => setImportSupplierId(supplier.id)}
-                      >
-                        <Text
-                          style={[
-                            styles.supplierOptionText,
-                            importSupplierId === supplier.id && styles.supplierOptionTextActive,
-                          ]}
-                        >
-                          {supplier.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-
-                  {importError && (
-                    <View style={styles.importError}>
-                      <Ionicons name="alert-circle" size={20} color={theme.colors.danger} />
-                      <Text style={styles.importErrorText}>{importError}</Text>
-                    </View>
-                  )}
-
-                  <TouchableOpacity
-                    style={[styles.uploadDocButton, !importSupplierId && styles.uploadDocButtonDisabled]}
-                    onPress={handlePickDocument}
-                    disabled={!importSupplierId}
-                  >
-                    <Ionicons name="cloud-upload-outline" size={24} color={theme.colors.white} />
-                    <Text style={styles.uploadDocButtonText}>Select Document</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {importStep === 'processing' && (
-                <View style={styles.importProcessingStep}>
-                  <ActivityIndicator size="large" color={theme.colors.accent} />
-                  <Text style={styles.importTitle}>Processing Document...</Text>
-                  <Text style={styles.importDescription}>
-                    AI is reading your document and extracting product information. This may take a moment.
-                  </Text>
-                </View>
-              )}
-
-              {importStep === 'review' && (
-                <View style={styles.importReviewStep}>
-                  <Text style={styles.importTitle}>Review Items ({selectedImportItems.size} selected)</Text>
-                  <Text style={styles.importDescription}>
-                    Tap items to select/deselect them for import.
-                  </Text>
-
-                  {importedItems.map((item, index) => (
+                <Text style={styles.inputLabel}>Select Supplier</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.supplierSelect}>
+                  {state.suppliers.map((supplier) => (
                     <TouchableOpacity
-                      key={index}
-                      style={[
-                        styles.importItemCard,
-                        selectedImportItems.has(index) && styles.importItemCardSelected,
-                      ]}
-                      onPress={() => toggleImportItem(index)}
+                      key={supplier.id}
+                      style={[styles.supplierOption, importSupplierId === supplier.id && styles.supplierOptionActive]}
+                      onPress={() => setImportSupplierId(supplier.id)}
                     >
-                      <View style={styles.importItemCheck}>
-                        <Ionicons
-                          name={selectedImportItems.has(index) ? 'checkbox' : 'square-outline'}
-                          size={24}
-                          color={selectedImportItems.has(index) ? theme.colors.accent : theme.colors.textMuted}
-                        />
-                      </View>
-                      <View style={styles.importItemInfo}>
-                        <Text style={styles.importItemName}>{item.name}</Text>
-                        <View style={styles.importItemDetails}>
-                          {item.barcode && <Text style={styles.importItemDetail}>Barcode: {item.barcode}</Text>}
-                          {item.wholesale_price && <Text style={styles.importItemDetail}>Price: ${item.wholesale_price}</Text>}
-                          {item.category && <Text style={styles.importItemDetail}>Category: {item.category}</Text>}
-                        </View>
-                      </View>
+                      <Text style={[styles.supplierOptionText, importSupplierId === supplier.id && styles.supplierOptionTextActive]}>
+                        {supplier.name}
+                      </Text>
                     </TouchableOpacity>
                   ))}
-                </View>
-              )}
-            </ScrollView>
+                </ScrollView>
 
-            {importStep === 'review' && (
-              <View style={styles.modalFooter}>
+                {importError && (
+                  <View style={styles.importError}>
+                    <Ionicons name="alert-circle" size={20} color={theme.colors.danger} />
+                    <Text style={styles.importErrorText}>{importError}</Text>
+                  </View>
+                )}
+
                 <TouchableOpacity
-                  style={styles.cancelButton}
-                  onPress={() => setImportStep('select')}
+                  style={[styles.uploadDocButton, !importSupplierId && styles.uploadDocButtonDisabled]}
+                  onPress={handlePickDocument}
+                  disabled={!importSupplierId}
                 >
-                  <Text style={styles.cancelButtonText}>Back</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.saveButton, importProcessing && styles.saveButtonDisabled]}
-                  onPress={handleConfirmImport}
-                  disabled={importProcessing || selectedImportItems.size === 0}
-                >
-                  {importProcessing ? (
-                    <ActivityIndicator size="small" color={theme.colors.white} />
-                  ) : (
-                    <Text style={styles.saveButtonText}>Import {selectedImportItems.size} Items</Text>
-                  )}
+                  <Ionicons name="cloud-upload-outline" size={24} color={theme.colors.white} />
+                  <Text style={styles.uploadDocButtonText}>Select Document</Text>
                 </TouchableOpacity>
               </View>
             )}
-          </View>
+
+            {importStep === 'processing' && (
+              <View style={styles.importProcessingStep}>
+                <ActivityIndicator size="large" color={theme.colors.accent} />
+                <Text style={styles.importTitle}>Processing Document...</Text>
+                <Text style={styles.importDescription}>
+                  AI is reading your document and extracting product information. This may take a moment.
+                </Text>
+              </View>
+            )}
+
+            {importStep === 'review' && (
+              <View style={styles.importReviewStep}>
+                <Text style={styles.importTitle}>Review Items ({selectedImportItems.size} selected)</Text>
+                <Text style={styles.importDescription}>Tap items to select/deselect them for import.</Text>
+
+                {importedItems.map((item, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[styles.importItemCard, selectedImportItems.has(index) && styles.importItemCardSelected]}
+                    onPress={() => toggleImportItem(index)}
+                  >
+                    <View style={styles.importItemCheck}>
+                      <Ionicons
+                        name={selectedImportItems.has(index) ? 'checkbox' : 'square-outline'}
+                        size={24}
+                        color={selectedImportItems.has(index) ? theme.colors.accent : theme.colors.textMuted}
+                      />
+                    </View>
+                    <View style={styles.importItemInfo}>
+                      <Text style={styles.importItemName}>{item.name}</Text>
+                      <View style={styles.importItemDetails}>
+                        {item.barcode && <Text style={styles.importItemDetail}>Barcode: {item.barcode}</Text>}
+                        {item.wholesale_price && <Text style={styles.importItemDetail}>Price: ${item.wholesale_price}</Text>}
+                        {item.category && <Text style={styles.importItemDetail}>Category: {item.category}</Text>}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </ScrollView>
+
+          {importStep === 'review' && (
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.cancelButton} onPress={() => setImportStep('select')}>
+                <Text style={styles.cancelButtonText}>Back</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveButton, importProcessing && styles.saveButtonDisabled]}
+                onPress={handleConfirmImport}
+                disabled={importProcessing || selectedImportItems.size === 0}
+              >
+                {importProcessing ? (
+                  <ActivityIndicator size="small" color={theme.colors.white} />
+                ) : (
+                  <Text style={styles.saveButtonText}>Import {selectedImportItems.size} Items</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </Modal>
     </View>
@@ -1321,109 +1295,42 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
 
-  // Header row
-  headerRow: {
+  // Action row (Import, Add, Edit)
+  actionRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: theme.spacing.md,
-    paddingTop: theme.spacing.md,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: theme.spacing.md,
     gap: theme.spacing.sm,
   },
-
-  // Stats bar
-  statsBar: {
+  actionButton: {
     flex: 1,
     flexDirection: 'row',
-    justifyContent: 'space-around',
     alignItems: 'center',
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.md,
-    borderRadius: theme.borderRadius.lg,
-    ...theme.shadow.sm,
-  },
-
-  // Inactive toggle
-  inactiveToggle: {
-    padding: theme.spacing.md,
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    position: 'relative',
-    ...theme.shadow.sm,
-  },
-  inactiveToggleActive: {
-    backgroundColor: theme.colors.textMuted,
-    borderColor: theme.colors.textMuted,
-  },
-  inactiveBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: theme.colors.warning,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
     justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-  },
-  inactiveBadgeText: {
-    color: theme.colors.white,
-    fontSize: 10,
-    fontWeight: theme.fontWeight.bold,
-  },
-  // Import button
-  importButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.lg,
+    borderRadius: theme.borderRadius.md,
     borderWidth: 1,
     borderColor: theme.colors.accent,
     gap: theme.spacing.xs,
-    ...theme.shadow.sm,
   },
-  importButtonText: {
+  actionButtonPrimary: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+  },
+  actionButtonActive: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+  },
+  actionButtonText: {
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.accent,
   },
-  // Add button
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.accent,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
-    borderRadius: theme.borderRadius.lg,
-    gap: theme.spacing.xs,
-    ...theme.shadow.sm,
-  },
-  addButtonText: {
-    fontSize: theme.fontSize.sm,
-    fontWeight: theme.fontWeight.semibold,
+  actionButtonTextPrimary: {
     color: theme.colors.white,
-  },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statValue: {
-    fontSize: theme.fontSize.xl,
-    fontWeight: theme.fontWeight.bold,
-    color: theme.colors.primary,
-  },
-  statLabel: {
-    fontSize: theme.fontSize.xs,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: theme.colors.border,
   },
 
   // Search
@@ -1432,8 +1339,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: theme.colors.surface,
     marginHorizontal: theme.spacing.md,
-    marginTop: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
     paddingHorizontal: theme.spacing.md,
     borderRadius: theme.borderRadius.lg,
     ...theme.shadow.sm,
@@ -1446,99 +1352,50 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
   },
 
-  // Supplier chips
-  supplierChipsScroll: {
-    flexGrow: 0,
-    flexShrink: 0,
-    marginBottom: theme.spacing.sm,
-    minHeight: 48,
-  },
-  supplierChipsContainer: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+  // Filter buttons
+  filterButtonRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 48,
-  },
-  supplierChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.borderRadius.full,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    marginRight: theme.spacing.sm,
-    minHeight: 36,
-    height: 36,
-  },
-  supplierChipActive: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  supplierChipText: {
-    fontSize: theme.fontSize.sm,
-    fontWeight: theme.fontWeight.medium,
-    color: theme.colors.text,
-    maxWidth: 150,
-    marginLeft: theme.spacing.xs,
-  },
-  supplierChipTextActive: {
-    color: theme.colors.white,
-    fontWeight: theme.fontWeight.semibold,
-  },
-
-  // Category pills
-  categoryPillsScroll: {
-    flexGrow: 0,
-    flexShrink: 0,
     marginBottom: theme.spacing.md,
-    minHeight: 48,
+    gap: theme.spacing.sm,
   },
-  categoryPillsContainer: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+  filterButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 48,
-  },
-  categoryPill: {
+    justifyContent: 'center',
+    paddingVertical: theme.spacing.sm + 4,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.borderRadius.full,
     backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    marginRight: theme.spacing.sm,
-    minHeight: 36,
-    height: 36,
-    justifyContent: 'center',
+    gap: theme.spacing.xs,
   },
-  categoryPillActive: {
+  filterButtonActive: {
     backgroundColor: theme.colors.accent,
     borderColor: theme.colors.accent,
   },
-  categoryPillText: {
+  filterButtonText: {
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.text,
+    flex: 1,
   },
-  categoryPillTextActive: {
+  filterButtonTextActive: {
     color: theme.colors.white,
-    fontWeight: theme.fontWeight.semibold,
   },
 
   // Status filter row
   statusFilterRow: {
     flexDirection: 'row',
     paddingHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
     gap: theme.spacing.sm,
   },
   statusFilterButton: {
     flex: 1,
-    paddingVertical: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm + 4,
     paddingHorizontal: theme.spacing.md,
     borderRadius: theme.borderRadius.md,
     backgroundColor: theme.colors.surface,
@@ -1566,7 +1423,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
   },
   resultsCount: {
     fontSize: theme.fontSize.sm,
@@ -1648,15 +1505,6 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
     backgroundColor: theme.colors.background,
   },
-  itemImagePlaceholder: {
-    width: '100%',
-    height: 100,
-    borderRadius: theme.borderRadius.md,
-    marginBottom: theme.spacing.sm,
-    backgroundColor: theme.colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   itemName: {
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.semibold,
@@ -1714,6 +1562,89 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.sm,
     color: theme.colors.textMuted,
     marginTop: theme.spacing.xs,
+  },
+
+  // Filter Modal
+  filterModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  filterModalContent: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: theme.borderRadius.xl,
+    borderTopRightRadius: theme.borderRadius.xl,
+    maxHeight: '70%',
+  },
+  filterModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  filterModalTitle: {
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
+  },
+  filterModalBody: {
+    padding: theme.spacing.md,
+    maxHeight: 400,
+  },
+  filterOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
+    gap: theme.spacing.md,
+  },
+  filterOptionText: {
+    flex: 1,
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
+  },
+  filterOptionTextActive: {
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.accent,
+  },
+  filterOptionCount: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textMuted,
+  },
+  filterModalFooter: {
+    flexDirection: 'row',
+    padding: theme.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    gap: theme.spacing.sm,
+  },
+  filterClearButton: {
+    flex: 1,
+    paddingVertical: theme.spacing.md,
+    alignItems: 'center',
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.md,
+  },
+  filterClearButtonText: {
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.textSecondary,
+  },
+  filterApplyButton: {
+    flex: 2,
+    paddingVertical: theme.spacing.md,
+    alignItems: 'center',
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.borderRadius.md,
+  },
+  filterApplyButtonText: {
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.white,
   },
 
   // Modal styles
@@ -1814,7 +1745,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  // Image upload styles
   imagePreviewContainer: {
     position: 'relative',
     marginBottom: theme.spacing.md,
@@ -1962,7 +1892,12 @@ const styles = StyleSheet.create({
   saveButtonDisabled: {
     opacity: 0.6,
   },
+
   // Import modal styles
+  importModalContainer: {
+    flex: 1,
+    backgroundColor: theme.colors.surface,
+  },
   importSelectStep: {
     alignItems: 'center',
     padding: theme.spacing.xl,

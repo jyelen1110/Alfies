@@ -141,7 +141,8 @@ serve(async (req) => {
           unit_price,
           total,
           xero_item_code,
-          xero_account_code
+          xero_account_code,
+          procurement_item_id
         )
       `)
       .eq('id', order_id)
@@ -158,9 +159,52 @@ serve(async (req) => {
     console.log('Order found:', order.order_number || order.id);
     console.log('Order items count:', order.items?.length || 0);
     console.log('Order customer_id:', order.customer_id || 'not set');
+    console.log('Order created_by:', order.created_by || 'not set');
+
+    // Determine customer ID - prefer customer_id, fall back to created_by
+    let customerId = order.customer_id;
+
+    if (!customerId && order.created_by) {
+      // Check if created_by is a customer (not an owner)
+      const { data: createdByUser } = await supabaseAdmin
+        .from('users')
+        .select('id, role, tenant_id')
+        .eq('id', order.created_by)
+        .single();
+
+      // If created_by user is a customer (role='user') or from a different tenant, use them
+      if (createdByUser && (createdByUser.role === 'user' || createdByUser.tenant_id !== userData.tenant_id)) {
+        console.log('Using created_by as customer_id:', order.created_by);
+        customerId = order.created_by;
+
+        // Update the order with customer_id for future exports
+        const { error: updateOrderError } = await supabaseAdmin
+          .from('orders')
+          .update({ customer_id: customerId })
+          .eq('id', order_id);
+
+        if (updateOrderError) {
+          console.log('Warning: Could not update order with customer_id:', updateOrderError.message);
+        } else {
+          console.log('Updated order with customer_id');
+        }
+
+        // Also update the invoice with customer_id
+        const { error: updateInvoiceError } = await supabaseAdmin
+          .from('invoices')
+          .update({ customer_id: customerId })
+          .eq('id', invoice_id);
+
+        if (updateInvoiceError) {
+          console.log('Warning: Could not update invoice with customer_id:', updateInvoiceError.message);
+        } else {
+          console.log('Updated invoice with customer_id');
+        }
+      }
+    }
 
     // Check for customer linked to order
-    if (!order.customer_id) {
+    if (!customerId) {
       console.error('ERROR: Order has no customer linked');
       return new Response(JSON.stringify({
         error: 'Cannot export to Xero without a customer linked to this order.',
@@ -190,7 +234,7 @@ serve(async (req) => {
     console.log('Invoice found:', invoice.invoice_number);
 
     // Get customer info from customer_id (the customer this order is FOR)
-    console.log('Fetching customer info for customer_id:', order.customer_id);
+    console.log('Fetching customer info for customer_id:', customerId);
     let customerName = 'Customer';
     let customerEmail = '';
     let xeroContactId: string | null = null;
@@ -198,7 +242,7 @@ serve(async (req) => {
     const { data: customer } = await supabaseAdmin
       .from('users')
       .select('business_name, full_name, contact_email, email, xero_contact_id, customer_id')
-      .eq('id', order.customer_id)
+      .eq('id', customerId)
       .single();
 
     if (!customer) {
@@ -233,15 +277,84 @@ serve(async (req) => {
       console.log('No customer found for customer_id, using default');
     }
 
-    // Validate all items have required Xero fields
+    // Look up xero codes from items table if missing from order_items
+    console.log('Checking for missing Xero codes in order items...');
+    const itemsMissingCodes = (order.items || []).filter(
+      (oi: { xero_account_code?: string }) => !oi.xero_account_code
+    );
+
+    if (itemsMissingCodes.length > 0) {
+      console.log(`${itemsMissingCodes.length} items missing xero codes, looking up from items table...`);
+
+      // First try by procurement_item_id
+      const itemsWithProcId = itemsMissingCodes.filter((oi: { procurement_item_id?: string }) => oi.procurement_item_id);
+      if (itemsWithProcId.length > 0) {
+        const itemIds = itemsWithProcId.map((oi: { procurement_item_id: string }) => oi.procurement_item_id);
+        console.log('Looking up by procurement_item_id:', itemIds);
+
+        const { data: itemsData } = await supabaseAdmin
+          .from('items')
+          .select('id, name, xero_account_code, xero_item_code')
+          .in('id', itemIds);
+
+        if (itemsData) {
+          const itemCodeMap = new Map(itemsData.map(i => [i.id, i]));
+          for (const orderItem of order.items || []) {
+            if (!orderItem.xero_account_code && orderItem.procurement_item_id) {
+              const item = itemCodeMap.get(orderItem.procurement_item_id);
+              if (item) {
+                console.log(`Found xero codes for "${orderItem.name}" by ID:`, item.xero_account_code, item.xero_item_code);
+                orderItem.xero_account_code = item.xero_account_code;
+                if (!orderItem.xero_item_code) {
+                  orderItem.xero_item_code = item.xero_item_code;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Then try by name for any still missing
+      const stillMissing = (order.items || []).filter(
+        (oi: { xero_account_code?: string }) => !oi.xero_account_code
+      );
+
+      if (stillMissing.length > 0) {
+        console.log(`${stillMissing.length} items still missing codes, trying name lookup...`);
+
+        // Get all items for this tenant
+        const { data: allItems } = await supabaseAdmin
+          .from('items')
+          .select('id, name, xero_account_code, xero_item_code')
+          .eq('tenant_id', userData.tenant_id);
+
+        if (allItems) {
+          // Create a map by lowercase name for fuzzy matching
+          const itemNameMap = new Map(allItems.map(i => [i.name.toLowerCase().trim(), i]));
+
+          for (const orderItem of order.items || []) {
+            if (!orderItem.xero_account_code) {
+              const item = itemNameMap.get(orderItem.name.toLowerCase().trim());
+              if (item) {
+                console.log(`Found xero codes for "${orderItem.name}" by name match:`, item.xero_account_code, item.xero_item_code);
+                orderItem.xero_account_code = item.xero_account_code;
+                if (!orderItem.xero_item_code) {
+                  orderItem.xero_item_code = item.xero_item_code;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Validate all items have required Xero fields (Item Code is optional)
     console.log('Validating Xero fields on items...');
     const itemErrors: string[] = [];
     for (const orderItem of order.items || []) {
       const missingFields: string[] = [];
 
-      if (!orderItem.xero_item_code) {
-        missingFields.push('Xero Item Code');
-      }
+      // xero_item_code is OPTIONAL - if not set, we just use item name as description
       if (!orderItem.xero_account_code) {
         missingFields.push('Xero Account Code');
       }
@@ -276,17 +389,25 @@ serve(async (req) => {
       total?: number;
       xero_item_code?: string;
       xero_account_code?: string;
+      procurement_item_id?: string;
     }, index: number) => {
-      console.log(`Line ${index + 1}: "${orderItem.name}" | Qty: ${orderItem.quantity} | Price: ${orderItem.unit_price} | AccountCode: ${orderItem.xero_account_code} | ItemCode: ${orderItem.xero_item_code}`);
+      console.log(`Line ${index + 1}: "${orderItem.name}" | Qty: ${orderItem.quantity} | Price: ${orderItem.unit_price} | AccountCode: ${orderItem.xero_account_code} | ItemCode: ${orderItem.xero_item_code || 'none'}`);
 
-      return {
+      // Build line item - only include ItemCode if it's set
+      const lineItem: Record<string, unknown> = {
         Description: orderItem.name,
         Quantity: orderItem.quantity,
         UnitAmount: orderItem.unit_price,
         AccountCode: orderItem.xero_account_code,
-        ItemCode: orderItem.xero_item_code,
         TaxType: 'OUTPUT', // GST on Income
       };
+
+      // Only add ItemCode if it exists
+      if (orderItem.xero_item_code) {
+        lineItem.ItemCode = orderItem.xero_item_code;
+      }
+
+      return lineItem;
     });
 
     // Calculate dates - use requested_delivery_date from order, due date is 7 days later
@@ -526,7 +647,7 @@ serve(async (req) => {
       xero_invoice_id: createdInvoice.InvoiceID,
       exported_at: new Date().toISOString(),
       status: 'exported',
-      customer_id: order.customer_id, // Ensure customer_id is set for customer visibility
+      customer_id: customerId, // Ensure customer_id is set for customer visibility
       shared_with_customer_at: new Date().toISOString(), // Share with customer after successful export
     };
 

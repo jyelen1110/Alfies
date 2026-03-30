@@ -1,4 +1,4 @@
-// Easy Ordering theme - blue palette
+// Alfies theme - blue palette
 export const theme = {
   colors: {
     // Primary: EO blue
@@ -14,12 +14,16 @@ export const theme = {
     success: '#27AE60',
     warning: '#F39C12',
     danger: '#E74C3C',
+    dangerLight: '#FDEDED',
+    error: '#E74C3C',
     info: '#1565A0',
 
     // Surfaces
     background: '#F5F6FA',
+    backgroundLight: '#EEF1F5',
     surface: '#FFFFFF',
     surfaceHover: '#E3F2FD',
+    card: '#FFFFFF',
 
     // Text
     text: '#1A1A1A',

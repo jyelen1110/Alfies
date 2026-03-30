@@ -99,6 +99,7 @@ export interface Item {
   categories?: string[]; // Multi-category support
   country_of_origin?: string;
   size?: string;
+  unit?: string;
   carton_size?: number;
   purchase_price?: number;
   wholesale_price: number;
@@ -203,6 +204,7 @@ export interface Invoice {
   created_at?: string;
   updated_at?: string;
   supplier?: { id: string; name: string };
+  customer?: { id: string; business_name?: string; full_name?: string };
   order?: { id: string };
   items?: InvoiceItem[];
 }

@@ -20,7 +20,13 @@
       }
     },
     "production": {
-      "distribution": "store"
+      "distribution": "store",
+      "ios": {
+        "autoIncrement": "buildNumber"
+      },
+      "android": {
+        "autoIncrement": "versionCode"
+      }
     }
   },
   "submit": {

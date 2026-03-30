@@ -68,7 +68,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
 <body>
     <div class="container">
         <h1>Privacy Policy</h1>
-        <p class="last-updated">Last updated: February 2024</p>
+        <p class="last-updated">Last updated: March 2026</p>
 
         <p>Easy Ordering ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information when you use our mobile application.</p>
 
@@ -114,6 +114,23 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
             <li>Request deletion of your account and data</li>
             <li>Opt out of marketing communications</li>
         </ul>
+
+        <h2>Account Deletion</h2>
+        <p>You can delete your account at any time directly within the app:</p>
+        <ul>
+            <li>Go to Settings in the app</li>
+            <li>Tap "Delete Account" at the bottom of the page</li>
+            <li>Confirm your decision by typing "delete"</li>
+            <li>Your account and all associated data will be permanently deleted</li>
+        </ul>
+        <p>When you delete your account, we will remove:</p>
+        <ul>
+            <li>Your profile and account information</li>
+            <li>Your cart items and saved preferences</li>
+            <li>Any connected integrations (such as Xero or Gmail)</li>
+            <li>Your access to all associated businesses</li>
+        </ul>
+        <p>Order history will be retained for business record-keeping purposes but will no longer be linked to your account. If you need assistance with account deletion, please contact us at the email below.</p>
 
         <h2>Push Notifications</h2>
         <p>With your permission, we may send push notifications about order updates and important information. You can disable notifications at any time through your device settings.</p>

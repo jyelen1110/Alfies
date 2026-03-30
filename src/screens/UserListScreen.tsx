@@ -497,7 +497,7 @@ export default function UserListScreen() {
 
   const getInviteMessage = (email: string): string => {
     const tenantName = tenant?.name || 'our business';
-    return `You've been invited to order from ${tenantName}!\n\nTo get started:\n1. Download the Easy Ordering app\n2. Tap "Have an invitation? Register here"\n3. Enter your email: ${email}\n4. Complete your registration\n\nWe look forward to serving you!`;
+    return `You've been invited to order from ${tenantName}!\n\nTo get started:\n1. Download the Alfies app\n2. Tap "Have an invitation? Register here"\n3. Enter your email: ${email}\n4. Complete your registration\n\nWe look forward to serving you!`;
   };
 
   const shareInvitation = async () => {

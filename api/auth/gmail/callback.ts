@@ -5,8 +5,8 @@ export const config = {
   runtime: 'edge',
 };
 
-const SUPABASE_URL = 'https://cijgmmckafmfmmlpvgyi.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpamdtbWNrYWZtZm1tbHB2Z3lpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMjQzNTgsImV4cCI6MjA4NTYwMDM1OH0.nwe0aDmwCKGbdFHwiWhEv6aeonwwOO1mmLQTQw2wuFU';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cijgmmckafmfmmlpvgyi.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 
 export default async function handler(request: Request) {
   const url = new URL(request.url);

@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useOrders } from '../context/OrderContext';
+import { useAuth } from '../context/AuthContext';
 import { theme } from '../theme';
 import { getXeroInvoicePDF } from '../services/xero';
 import { supabase } from '../lib/supabase';
@@ -84,7 +85,20 @@ function PaymentStatusBadge({ status }: { status: PaymentStatus }) {
 
 export default function InvoicesScreen() {
   const { state, exportToXero, getSupplierName, loadInvoices } = useOrders();
+  const { user } = useAuth();
   const { invoices, suppliers } = state;
+  const isOwner = user?.role === 'owner';
+
+  // Get the customer/business name for display
+  const getCustomerName = useCallback((invoice: Invoice): string => {
+    if (invoice.customer?.business_name) {
+      return invoice.customer.business_name;
+    }
+    if (invoice.customer?.full_name) {
+      return invoice.customer.full_name;
+    }
+    return 'Unknown Customer';
+  }, []);
 
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -303,7 +317,8 @@ export default function InvoicesScreen() {
   const renderInvoiceItem = ({ item }: { item: Invoice }) => {
     const exportStatus = getExportStatus(item);
     const paymentStatus = getPaymentStatus(item);
-    const supplierName = getSupplierName(item.supplier_id);
+    // Owners see customer name, customers see supplier name
+    const displayName = isOwner ? getCustomerName(item) : getSupplierName(item.supplier_id);
 
     return (
       <TouchableOpacity
@@ -317,12 +332,12 @@ export default function InvoicesScreen() {
             <Text style={styles.invoiceDate}>Delivery: {formatDate(item.invoice_date)}</Text>
           </View>
           <View style={styles.cardBadges}>
-            <ExportStatusBadge status={exportStatus} />
+            {isOwner && <ExportStatusBadge status={exportStatus} />}
             <PaymentStatusBadge status={paymentStatus} />
           </View>
         </View>
 
-        <Text style={styles.supplierName}>{supplierName}</Text>
+        <Text style={styles.supplierName}>{displayName}</Text>
 
         <View style={styles.cardFooter}>
           <View>
@@ -362,7 +377,8 @@ export default function InvoicesScreen() {
     const invoice = selectedInvoice;
     const exportStatus = getExportStatus(invoice);
     const paymentStatus = getPaymentStatus(invoice);
-    const supplierName = getSupplierName(invoice.supplier_id);
+    // Owners see customer name, customers see supplier name
+    const displayName = isOwner ? getCustomerName(invoice) : getSupplierName(invoice.supplier_id);
     const isExported = exportStatus === 'exported';
     const isPending = exportStatus === 'pending';
     const canExport = exportStatus !== 'exported' && exportStatus !== 'pending';
@@ -397,14 +413,14 @@ export default function InvoicesScreen() {
               </View>
 
               <View style={styles.detailStatusRow}>
-                <ExportStatusBadge status={exportStatus} />
+                {isOwner && <ExportStatusBadge status={exportStatus} />}
                 <PaymentStatusBadge status={paymentStatus} />
               </View>
 
               <View style={styles.detailMeta}>
                 <View style={styles.detailMetaRow}>
                   <Ionicons name="business-outline" size={16} color={theme.colors.textSecondary} />
-                  <Text style={styles.detailMetaText}>{supplierName}</Text>
+                  <Text style={styles.detailMetaText}>{displayName}</Text>
                 </View>
                 <View style={styles.detailMetaRow}>
                   <Ionicons name="calendar-outline" size={16} color={theme.colors.textSecondary} />
@@ -424,7 +440,7 @@ export default function InvoicesScreen() {
                 )}
               </View>
 
-              {isPending && (
+              {isOwner && isPending && (
                 <View style={[styles.xeroExportedBanner, { backgroundColor: '#E3F2FD' }]}>
                   <Ionicons name="hourglass-outline" size={18} color={theme.colors.info} />
                   <Text style={[styles.xeroExportedText, { color: theme.colors.info }]}>
@@ -433,7 +449,7 @@ export default function InvoicesScreen() {
                 </View>
               )}
 
-              {isExported && invoice.exported_at && (
+              {isOwner && isExported && invoice.exported_at && (
                 <View style={styles.xeroExportedBanner}>
                   <Ionicons name="checkmark-circle" size={18} color={theme.colors.success} />
                   <Text style={styles.xeroExportedText}>
@@ -442,7 +458,7 @@ export default function InvoicesScreen() {
                 </View>
               )}
 
-              {exportStatus === 'export_failed' && (
+              {isOwner && exportStatus === 'export_failed' && (
                 <View style={[styles.xeroExportedBanner, { backgroundColor: '#FDEDED' }]}>
                   <Ionicons name="alert-circle" size={18} color={theme.colors.error} />
                   <View style={{ flex: 1 }}>
@@ -520,7 +536,7 @@ export default function InvoicesScreen() {
 
           {/* Action Buttons */}
           <View style={styles.modalActions}>
-            {canExport && (
+            {isOwner && canExport && (
               <TouchableOpacity
                 style={[styles.actionButton, exportStatus === 'export_failed' ? styles.retryButton : styles.exportButton]}
                 onPress={() => handleExport(invoice.id)}
@@ -555,38 +571,40 @@ export default function InvoicesScreen() {
                 ) : (
                   <>
                     <Ionicons
-                      name="print-outline"
+                      name={isOwner ? 'print-outline' : 'document-text-outline'}
                       size={20}
                       color={theme.colors.white}
                     />
                     <Text style={styles.actionButtonText}>
-                      Print Invoice
+                      {isOwner ? 'Print Invoice' : 'View Invoice'}
                     </Text>
                   </>
                 )}
               </TouchableOpacity>
             )}
-            <TouchableOpacity
-              style={[styles.actionButton, styles.archiveButton]}
-              onPress={() => handleArchive(invoice)}
-              disabled={archiving}
-              activeOpacity={0.7}
-            >
-              {archiving ? (
-                <ActivityIndicator size="small" color={theme.colors.textMuted} />
-              ) : (
-                <>
-                  <Ionicons
-                    name={invoice.is_archived ? 'arrow-undo-outline' : 'archive-outline'}
-                    size={20}
-                    color={theme.colors.textMuted}
-                  />
-                  <Text style={styles.archiveButtonText}>
-                    {invoice.is_archived ? 'Unarchive' : 'Archive'}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {isOwner && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.archiveButton]}
+                onPress={() => handleArchive(invoice)}
+                disabled={archiving}
+                activeOpacity={0.7}
+              >
+                {archiving ? (
+                  <ActivityIndicator size="small" color={theme.colors.textMuted} />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={invoice.is_archived ? 'arrow-undo-outline' : 'archive-outline'}
+                      size={20}
+                      color={theme.colors.textMuted}
+                    />
+                    <Text style={styles.archiveButtonText}>
+                      {invoice.is_archived ? 'Unarchive' : 'Archive'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Modal>

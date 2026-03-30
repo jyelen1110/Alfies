@@ -410,10 +410,6 @@ const styles = StyleSheet.create({
   columnPickerButton: {
     padding: theme.spacing.xs,
   },
-  itemCount: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.textSecondary,
-  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',

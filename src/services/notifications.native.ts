@@ -1,16 +1,23 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 
-// Configure notification behavior
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+// Configure notification behavior (wrapped in try-catch for safety)
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+} catch (error) {
+  console.log('Failed to set notification handler:', error);
+}
 
 /**
  * Register for push notifications and store the token
@@ -39,8 +46,13 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
   // Get the Expo push token
   try {
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    if (!projectId) {
+      console.log('No project ID found, skipping push token registration');
+      return null;
+    }
     const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: process.env.EXPO_PROJECT_ID,
+      projectId,
     });
     const token = tokenData.data;
     console.log('Expo push token:', token);
@@ -153,10 +165,14 @@ export async function notifyNewOrder(
 
 // Android notification channel setup
 if (Platform.OS === 'android') {
-  Notifications.setNotificationChannelAsync('default', {
-    name: 'default',
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 250, 250, 250],
-    lightColor: '#FF6B35',
-  });
+  try {
+    Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF6B35',
+    });
+  } catch (error) {
+    console.log('Failed to set Android notification channel:', error);
+  }
 }

@@ -258,7 +258,7 @@ export default function Navigation() {
     return (
       <View style={styles.loadingContainer}>
         <Ionicons name="cart" size={64} color={theme.colors.white} />
-        <Text style={styles.loadingText}>Easy Ordering</Text>
+        <Text style={styles.loadingText}>Alfies</Text>
       </View>
     );
   }

@@ -443,7 +443,7 @@ export default function OrdersScreen() {
     const order = selectedOrder;
     const supplierName = getSupplierName(order.supplier_id);
     const canGenerateInvoice =
-      (order.status === 'approved' || order.status === 'delivered') && !orderHasInvoice(order.id);
+      isOwner() && (order.status === 'approved' || order.status === 'delivered') && !orderHasInvoice(order.id);
     const isDelivered = order.status === 'delivered';
     const canDelete = order.status === 'draft' || order.status === 'cancelled' || isOwner();
 

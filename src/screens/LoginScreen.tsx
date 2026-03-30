@@ -10,10 +10,13 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { useAuth } from '../context/AuthContext';
+
+const PRIVACY_POLICY_URL = 'https://easy-ordering.vercel.app/api/privacy-policy';
 
 export default function LoginScreen({ navigation }: { navigation: any }) {
   const { signIn } = useAuth();
@@ -60,7 +63,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       >
         <View style={styles.logoSection}>
           <Ionicons name="cart" size={80} color={theme.colors.white} />
-          <Text style={styles.title}>Easy Ordering</Text>
+          <Text style={styles.title}>Alfies</Text>
           <Text style={styles.subtitle}>Wholesale Ordering Made Simple</Text>
         </View>
 
@@ -152,6 +155,13 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
             <Text style={styles.registerLinkText}>
               Have an invitation? <Text style={styles.registerLinkBold}>Register here</Text>
             </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.privacyLink}
+            onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+          >
+            <Text style={styles.privacyLinkText}>Privacy Policy</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -273,5 +283,15 @@ const styles = StyleSheet.create({
   registerLinkBold: {
     fontWeight: theme.fontWeight.semibold,
     color: theme.colors.primary,
+  },
+  privacyLink: {
+    alignItems: 'center',
+    marginTop: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+  },
+  privacyLinkText: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+    textDecorationLine: 'underline',
   },
 });
