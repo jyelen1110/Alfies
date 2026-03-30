@@ -1,20 +1,21 @@
 {
   "expo": {
-    "name": "Easy Ordering",
+    "name": "Alfies",
     "slug": "alfies-ordering",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1565A0"
+      "backgroundColor": "#5DADE2"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.easyordering.app",
+      "buildNumber": "11",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -22,22 +23,31 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1565A0"
+        "backgroundColor": "#5DADE2"
       },
-      "package": "com.easyordering.app"
+      "package": "com.easyordering.app",
+      "versionCode": 11
     },
     "web": {
       "favicon": "./assets/icon.png",
       "bundler": "metro",
       "output": "single",
-      "name": "Easy Ordering",
-      "shortName": "EasyOrder"
+      "name": "Alfies",
+      "shortName": "Alfies"
     },
     "plugins": [
       "expo-asset",
       "expo-web-browser",
-      "@react-native-community/datetimepicker"
+      "expo-notifications",
+      "@react-native-community/datetimepicker",
+      "expo-updates"
     ],
+    "updates": {
+      "url": "https://u.expo.dev/ccb4367c-698d-4604-a21d-a46896932631"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "extra": {
       "eas": {
         "projectId": "ccb4367c-698d-4604-a21d-a46896932631"
