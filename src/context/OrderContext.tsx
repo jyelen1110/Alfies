@@ -252,7 +252,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       .from('customer_suppliers')
       .select(`
         *,
-        tenant:tenants(id, name, slug, settings)
+        tenant:tenants!supplier_tenant_id(id, name, slug, settings)
       `)
       .eq('customer_id', user.id)
       .eq('status', 'active');
@@ -386,7 +386,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     let query = supabase
       .from('invoices')
-      .select('*, supplier:suppliers(id, name), items:invoice_items(*)')
+      .select('*, supplier:suppliers(id, name), customer:users!customer_id(id, business_name, full_name), items:invoice_items(*)')
       .order('invoice_date', { ascending: false })
       .range(0, 999);
 
@@ -663,6 +663,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       const orderItems = items.map((item) => ({
         order_id: newOrder.id,
         tenant_id: tenant.id,
+        procurement_item_id: item.procurement_item_id || item.id || null,
         name: item.name,
         quantity: item.quantity,
         unit_price: item.unit_price,
@@ -720,6 +721,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       const orderItems = items.map((item) => ({
         order_id: newOrder.id,
         tenant_id: tenant.id,
+        procurement_item_id: item.procurement_item_id || item.id || null,
         name: item.name,
         quantity: item.quantity,
         unit_price: item.unit_price,
@@ -859,7 +861,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }
 
     const existingOrder = state.orders.find((o) => o.id === orderId);
-    const updatedOrder = { ...existingOrder, ...data, items: existingOrder?.items || [] };
+    if (!existingOrder) {
+      console.error('Order not found for update:', orderId);
+      return null;
+    }
+    const updatedOrder = { ...existingOrder, ...data, items: existingOrder.items || [] };
     dispatch({ type: 'UPDATE_ORDER', payload: updatedOrder });
     return updatedOrder;
   };
@@ -874,8 +880,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     const orderItems = items.map((item) => ({
       order_id: orderId,
       tenant_id: tenant.id,
+      procurement_item_id: item.procurement_item_id || item.id || null,
       name: item.name,
       quantity: item.quantity,
+      unit: item.unit || 'each',
       unit_price: item.unit_price,
       total: item.quantity * item.unit_price,
       xero_item_code: item.xero_item_code || null,
@@ -1098,6 +1106,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       const orderItems = items.map((item) => ({
         order_id: newOrder.id,
         tenant_id: tenantId,
+        procurement_item_id: item.procurement_item_id || item.id || null, // Link back to original item
         name: item.name,
         quantity: item.quantity,
         unit_price: item.unit_price,

@@ -57,12 +57,19 @@ export async function connectGmail(tenantId: string): Promise<{ success: boolean
   try {
     console.log('connectGmail: Starting connection for tenant', tenantId);
 
-    // Get the auth URL from our edge function (no auth required)
+    // Get current session for authentication
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return { success: false, error: 'Not authenticated. Please sign in again.' };
+    }
+
+    // Get the auth URL from our edge function
     const response = await fetch(`${supabaseUrl}/functions/v1/gmail-auth`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'apikey': supabaseAnonKey,
+        'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({ tenantId }),
     });

@@ -251,7 +251,7 @@ export default function CustomerRegistrationScreen({ route, navigation }: Props)
       if (invitation?.tenant_id && (invitation?.role === 'user' || !invitation?.role)) {
         const { error: supplierError } = await supabase.from('customer_suppliers').insert({
           customer_id: authData.user.id,
-          tenant_id: invitation.tenant_id,
+          supplier_tenant_id: invitation.tenant_id,
           status: 'active',
         });
 
