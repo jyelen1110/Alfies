@@ -1,5 +1,6 @@
 // Gmail OAuth Callback Handler
 // Receives the OAuth code from Google and exchanges it for tokens
+// Updated: Use JWT anon key for edge function calls
 
 export const config = {
   runtime: 'edge',
