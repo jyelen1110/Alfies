@@ -32,6 +32,8 @@ export default function SettingsScreen() {
   const [xeroConnectedAt, setXeroConnectedAt] = useState<string | null>(null);
   const [xeroLoading, setXeroLoading] = useState(false);
   const [checkingXero, setCheckingXero] = useState(true);
+  const [syncingXeroItems, setSyncingXeroItems] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
   // Gmail connection state
   const [gmailStatus, setGmailStatus] = useState<GmailConnectionStatus>({ connected: false });
@@ -194,6 +196,62 @@ export default function SettingsScreen() {
       }
     } finally {
       setXeroLoading(false);
+    }
+  };
+
+  const handleSyncXeroItems = async () => {
+    console.log('handleSyncXeroItems called');
+    setSyncingXeroItems(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        const msg = 'Not authenticated. Please sign in again.';
+        if (Platform.OS === 'web') {
+          window.alert('Error: ' + msg);
+        } else {
+          Alert.alert('Error', msg);
+        }
+        return;
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/sync-xero-items`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setLastSyncTime(new Date().toISOString());
+        const msg = result.message || `Synced ${result.stats?.updated || 0} items from Xero`;
+        if (Platform.OS === 'web') {
+          window.alert('Success: ' + msg);
+        } else {
+          Alert.alert('Success', msg);
+        }
+      } else {
+        const errorMsg = result.error || 'Failed to sync items';
+        if (Platform.OS === 'web') {
+          window.alert('Error: ' + errorMsg);
+        } else {
+          Alert.alert('Error', errorMsg);
+        }
+      }
+    } catch (error) {
+      console.error('handleSyncXeroItems exception:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to sync items';
+      if (Platform.OS === 'web') {
+        window.alert('Error: ' + errorMsg);
+      } else {
+        Alert.alert('Error', errorMsg);
+      }
+    } finally {
+      setSyncingXeroItems(false);
     }
   };
 
@@ -522,6 +580,31 @@ export default function SettingsScreen() {
                     </View>
                   </View>
                 </View>
+                <View style={styles.menuDivider} />
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={handleSyncXeroItems}
+                  disabled={syncingXeroItems}
+                >
+                  <View style={styles.menuItemLeft}>
+                    {syncingXeroItems ? (
+                      <ActivityIndicator size="small" color={theme.colors.info} />
+                    ) : (
+                      <Ionicons name="sync-outline" size={20} color={theme.colors.info} />
+                    )}
+                    <View>
+                      <Text style={styles.menuItemValue}>
+                        {syncingXeroItems ? 'Syncing items...' : 'Sync Items from Xero'}
+                      </Text>
+                      {lastSyncTime && !syncingXeroItems && (
+                        <Text style={styles.xeroConnectedDate}>
+                          Last synced: {new Date(lastSyncTime).toLocaleString()}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+                </TouchableOpacity>
                 <View style={styles.menuDivider} />
                 <TouchableOpacity
                   style={styles.menuItem}
