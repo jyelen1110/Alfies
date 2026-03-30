@@ -27,6 +27,10 @@ export default async function handler(request: Request) {
   }
 
   try {
+    // Debug: Log what key we're using
+    console.log('SUPABASE_ANON_KEY prefix:', SUPABASE_ANON_KEY.substring(0, 20));
+    console.log('Full env check:', process.env.SUPABASE_ANON_KEY?.substring(0, 20));
+
     // Call the gmail-callback edge function to exchange the code
     const response = await fetch(`${SUPABASE_URL}/functions/v1/gmail-callback`, {
       method: 'POST',
