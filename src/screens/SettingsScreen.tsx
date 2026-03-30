@@ -147,58 +147,102 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleDisconnectXero = () => {
-    Alert.alert(
-      'Disconnect Xero',
-      'Are you sure you want to disconnect Xero? New invoices will no longer sync automatically.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disconnect',
-          style: 'destructive',
-          onPress: async () => {
-            if (!tenant?.id) return;
-            setXeroLoading(true);
-            try {
-              const result = await disconnectXero(tenant.id);
-              if (result.success) {
-                setXeroConnected(false);
-                setXeroConnectedAt(null);
-                Alert.alert('Success', 'Xero disconnected');
-              } else {
-                Alert.alert('Error', result.error || 'Failed to disconnect Xero');
-              }
-            } catch (error) {
-              Alert.alert('Error', 'Failed to disconnect Xero');
-            } finally {
-              setXeroLoading(false);
-            }
-          },
-        },
-      ]
-    );
-  };
+  const handleDisconnectXero = async () => {
+    console.log('handleDisconnectXero called');
 
-  const handleConnectGmail = async () => {
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm('Are you sure you want to disconnect Xero? New invoices will no longer sync automatically.')
+      : await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'Disconnect Xero',
+            'Are you sure you want to disconnect Xero? New invoices will no longer sync automatically.',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Disconnect', style: 'destructive', onPress: () => resolve(true) },
+            ]
+          );
+        });
+
+    if (!confirmed) return;
+
     if (!tenant?.id) return;
-    setGmailLoading(true);
+    setXeroLoading(true);
     try {
-      const result = await connectGmail(tenant.id);
+      const result = await disconnectXero(tenant.id);
       if (result.success) {
-        setTimeout(async () => {
-          await checkGmailStatus();
-          setGmailLoading(false);
-          Alert.alert('Success', 'Gmail connected! Order emails will be processed automatically.');
-        }, 2000);
+        setXeroConnected(false);
+        setXeroConnectedAt(null);
+        if (Platform.OS === 'web') {
+          window.alert('Success: Xero disconnected');
+        } else {
+          Alert.alert('Success', 'Xero disconnected');
+        }
       } else {
-        setGmailLoading(false);
-        if (result.error !== 'Connection cancelled') {
-          Alert.alert('Error', result.error || 'Failed to connect Gmail');
+        const errorMsg = result.error || 'Failed to disconnect Xero';
+        if (Platform.OS === 'web') {
+          window.alert(`Error: ${errorMsg}`);
+        } else {
+          Alert.alert('Error', errorMsg);
         }
       }
     } catch (error) {
+      console.error('handleDisconnectXero exception:', error);
+      if (Platform.OS === 'web') {
+        window.alert('Error: Failed to disconnect Xero');
+      } else {
+        Alert.alert('Error', 'Failed to disconnect Xero');
+      }
+    } finally {
+      setXeroLoading(false);
+    }
+  };
+
+  const handleConnectGmail = async () => {
+    console.log('handleConnectGmail called, tenant:', tenant?.id);
+    if (!tenant?.id) {
+      console.error('No tenant ID');
+      if (Platform.OS === 'web') {
+        window.alert('Error: No tenant ID found');
+      } else {
+        Alert.alert('Error', 'No tenant ID found');
+      }
+      return;
+    }
+    setGmailLoading(true);
+    try {
+      const result = await connectGmail(tenant.id);
+      console.log('connectGmail result:', result);
+      if (result.success) {
+        // On web, the page will redirect, so this code won't run
+        // On native, show success after a delay
+        if (Platform.OS !== 'web') {
+          setTimeout(async () => {
+            await checkGmailStatus();
+            setGmailLoading(false);
+            Alert.alert('Success', 'Gmail connected! Order emails will be processed automatically.');
+          }, 2000);
+        }
+      } else {
+        setGmailLoading(false);
+        if (result.error !== 'Connection cancelled') {
+          const errorMsg = result.error || 'Failed to connect Gmail';
+          console.error('Gmail connection error:', errorMsg);
+          if (Platform.OS === 'web') {
+            window.alert(`Error: ${errorMsg}`);
+          } else {
+            Alert.alert('Error', errorMsg);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('handleConnectGmail exception:', error);
       setGmailLoading(false);
-      Alert.alert('Error', 'Failed to connect Gmail');
+      const errorMsg = error instanceof Error ? error.message : 'Failed to connect Gmail';
+      if (Platform.OS === 'web') {
+        window.alert(`Error: ${errorMsg}`);
+      } else {
+        Alert.alert('Error', errorMsg);
+      }
     }
   };
 
@@ -244,35 +288,53 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleDisconnectGmail = () => {
-    Alert.alert(
-      'Disconnect Gmail',
-      'Are you sure you want to disconnect Gmail? Order emails will no longer be processed automatically.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disconnect',
-          style: 'destructive',
-          onPress: async () => {
-            if (!tenant?.id) return;
-            setGmailLoading(true);
-            try {
-              const result = await disconnectGmail(tenant.id);
-              if (result.success) {
-                setGmailStatus({ connected: false });
-                Alert.alert('Success', 'Gmail disconnected');
-              } else {
-                Alert.alert('Error', result.error || 'Failed to disconnect Gmail');
-              }
-            } catch (error) {
-              Alert.alert('Error', 'Failed to disconnect Gmail');
-            } finally {
-              setGmailLoading(false);
-            }
-          },
-        },
-      ]
-    );
+  const handleDisconnectGmail = async () => {
+    console.log('handleDisconnectGmail called');
+
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm('Are you sure you want to disconnect Gmail? Order emails will no longer be processed automatically.')
+      : await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'Disconnect Gmail',
+            'Are you sure you want to disconnect Gmail? Order emails will no longer be processed automatically.',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Disconnect', style: 'destructive', onPress: () => resolve(true) },
+            ]
+          );
+        });
+
+    if (!confirmed) return;
+
+    if (!tenant?.id) return;
+    setGmailLoading(true);
+    try {
+      const result = await disconnectGmail(tenant.id);
+      if (result.success) {
+        setGmailStatus({ connected: false });
+        if (Platform.OS === 'web') {
+          window.alert('Success: Gmail disconnected');
+        } else {
+          Alert.alert('Success', 'Gmail disconnected');
+        }
+      } else {
+        const errorMsg = result.error || 'Failed to disconnect Gmail';
+        if (Platform.OS === 'web') {
+          window.alert(`Error: ${errorMsg}`);
+        } else {
+          Alert.alert('Error', errorMsg);
+        }
+      }
+    } catch (error) {
+      console.error('handleDisconnectGmail exception:', error);
+      if (Platform.OS === 'web') {
+        window.alert('Error: Failed to disconnect Gmail');
+      } else {
+        Alert.alert('Error', 'Failed to disconnect Gmail');
+      }
+    } finally {
+      setGmailLoading(false);
+    }
   };
 
   const handleSignOut = async () => {
