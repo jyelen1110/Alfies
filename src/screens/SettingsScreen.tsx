@@ -15,7 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseUrl } from '../lib/supabase';
 import { checkXeroConnection, connectXero, disconnectXero } from '../services/xero';
 import { checkGmailConnection, connectGmail, disconnectGmail, updateGmailFilters, getGmailLabels, GmailConnectionStatus, GmailLabel } from '../services/gmail';
 import BusinessSwitcher from '../components/BusinessSwitcher';
@@ -23,6 +23,9 @@ import BusinessSwitcher from '../components/BusinessSwitcher';
 export default function SettingsScreen() {
   const { user, tenant, signOut, isOwner, isMaster } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   // Xero connection state
   const [xeroConnected, setXeroConnected] = useState(false);
@@ -43,10 +46,12 @@ export default function SettingsScreen() {
   const [gmailLabels, setGmailLabels] = useState<GmailLabel[]>([]);
   const [loadingLabels, setLoadingLabels] = useState(false);
 
-  // Check for Gmail OAuth callback params (web only)
+  // Check for OAuth callback params (web only)
   useEffect(() => {
     if (typeof window !== 'undefined' && window.location?.search) {
       const params = new URLSearchParams(window.location.search);
+
+      // Gmail callback
       const gmailConnected = params.get('gmail_connected');
       const gmailError = params.get('gmail_error');
       const email = params.get('email');
@@ -61,6 +66,24 @@ export default function SettingsScreen() {
         }
       } else if (gmailError) {
         Alert.alert('Error', `Failed to connect Gmail: ${gmailError}`);
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+
+      // Xero callback
+      const xeroConnected = params.get('xero_connected');
+      const xeroError = params.get('xero_error');
+      const org = params.get('org');
+
+      if (xeroConnected === 'true') {
+        Alert.alert('Success', `Xero connected${org ? ` to ${org}` : ''}! You can now export invoices to Xero.`);
+        // Clear URL params
+        window.history.replaceState({}, '', window.location.pathname);
+        // Refresh Xero status
+        if (tenant?.id) {
+          checkXeroStatus();
+        }
+      } else if (xeroError) {
+        Alert.alert('Error', `Failed to connect Xero: ${xeroError}`);
         window.history.replaceState({}, '', window.location.pathname);
       }
     }
@@ -271,6 +294,65 @@ export default function SettingsScreen() {
         },
       ]);
     }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText.toLowerCase() !== 'delete') {
+      Alert.alert('Error', 'Please type "delete" to confirm account deletion.');
+      return;
+    }
+
+    setDeletingAccount(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        Alert.alert('Error', 'Please sign in again to delete your account.');
+        setDeletingAccount(false);
+        return;
+      }
+
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/delete-account`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      let result: { error?: string; success?: boolean };
+      try {
+        result = await response.json();
+      } catch {
+        result = { error: 'Server error. Please try again.' };
+      }
+
+      if (!response.ok) {
+        Alert.alert('Error', result.error || 'Failed to delete account');
+        setDeletingAccount(false);
+        return;
+      }
+
+      // Account deleted successfully - sign out and show message
+      setShowDeleteModal(false);
+      setDeletingAccount(false);
+      Alert.alert(
+        'Account Deleted',
+        'Your account has been permanently deleted.',
+        [{ text: 'OK', onPress: () => signOut() }]
+      );
+    } catch (error: any) {
+      console.error('Delete account error:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+      setDeletingAccount(false);
+    }
+  };
+
+  const openDeleteAccountModal = () => {
+    setDeleteConfirmText('');
+    setShowDeleteModal(true);
   };
 
   return (
@@ -550,7 +632,91 @@ export default function SettingsScreen() {
         </Text>
       </TouchableOpacity>
 
-      <Text style={styles.version}>Easy Ordering v1.0.0</Text>
+      {/* Delete Account */}
+      <TouchableOpacity
+        style={styles.deleteAccountButton}
+        onPress={openDeleteAccountModal}
+        disabled={deletingAccount}
+      >
+        <Ionicons name="trash-outline" size={20} color={theme.colors.textMuted} />
+        <Text style={styles.deleteAccountText}>Delete Account</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.version}>Alfies v1.0.0</Text>
+
+      {/* Delete Account Confirmation Modal */}
+      <Modal visible={showDeleteModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Delete Account</Text>
+              <TouchableOpacity onPress={() => setShowDeleteModal(false)} disabled={deletingAccount}>
+                <Ionicons name="close" size={24} color={theme.colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.deleteWarningBox}>
+                <Ionicons name="warning" size={32} color={theme.colors.danger} />
+                <Text style={styles.deleteWarningTitle}>This action cannot be undone</Text>
+              </View>
+
+              <Text style={styles.deleteWarningText}>
+                Deleting your account will permanently remove:
+              </Text>
+              <View style={styles.deleteWarningList}>
+                <Text style={styles.deleteWarningItem}>Your profile and account information</Text>
+                <Text style={styles.deleteWarningItem}>Your cart items and saved preferences</Text>
+                <Text style={styles.deleteWarningItem}>Any connected integrations (Xero, Gmail)</Text>
+                <Text style={styles.deleteWarningItem}>Your access to all associated businesses</Text>
+              </View>
+
+              <Text style={styles.deleteWarningText}>
+                Order history will be preserved but will no longer be linked to your account.
+              </Text>
+
+              <Text style={styles.inputLabel}>Type "delete" to confirm:</Text>
+              <TextInput
+                style={styles.textInput}
+                value={deleteConfirmText}
+                onChangeText={setDeleteConfirmText}
+                placeholder="delete"
+                placeholderTextColor={theme.colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!deletingAccount}
+              />
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowDeleteModal(false)}
+                disabled={deletingAccount}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.deleteConfirmButton,
+                  (deleteConfirmText.toLowerCase() !== 'delete' || deletingAccount) && styles.deleteConfirmButtonDisabled,
+                ]}
+                onPress={handleDeleteAccount}
+                disabled={deleteConfirmText.toLowerCase() !== 'delete' || deletingAccount}
+              >
+                {deletingAccount ? (
+                  <ActivityIndicator size="small" color={theme.colors.white} />
+                ) : (
+                  <>
+                    <Ionicons name="trash" size={18} color={theme.colors.white} />
+                    <Text style={styles.deleteConfirmButtonText}>Delete Account</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Gmail Filter Modal */}
       <Modal visible={showGmailFilterModal} animationType="slide" transparent>
@@ -778,12 +944,72 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
     borderWidth: 1,
     borderColor: theme.colors.danger + '30',
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
   },
   signOutText: {
     color: theme.colors.danger,
     fontWeight: theme.fontWeight.semibold,
     fontSize: theme.fontSize.md,
+  },
+  deleteAccountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: theme.spacing.sm,
+    gap: theme.spacing.xs,
+    marginBottom: theme.spacing.md,
+  },
+  deleteAccountText: {
+    color: theme.colors.textMuted,
+    fontSize: theme.fontSize.sm,
+  },
+  deleteWarningBox: {
+    alignItems: 'center',
+    padding: theme.spacing.lg,
+    backgroundColor: theme.colors.danger + '10',
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.md,
+  },
+  deleteWarningTitle: {
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.danger,
+    marginTop: theme.spacing.sm,
+    textAlign: 'center',
+  },
+  deleteWarningText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.sm,
+    lineHeight: 20,
+  },
+  deleteWarningList: {
+    marginBottom: theme.spacing.md,
+    paddingLeft: theme.spacing.sm,
+  },
+  deleteWarningItem: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    marginBottom: 4,
+    paddingLeft: theme.spacing.sm,
+  },
+  deleteConfirmButton: {
+    flex: 2,
+    flexDirection: 'row',
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.xs,
+  },
+  deleteConfirmButtonDisabled: {
+    opacity: 0.5,
+  },
+  deleteConfirmButtonText: {
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.white,
   },
   version: {
     textAlign: 'center',

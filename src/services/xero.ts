@@ -1,6 +1,7 @@
 // Xero Integration Service
 import { supabase, supabaseUrl, supabaseAnonKey } from '../lib/supabase';
 import * as WebBrowser from 'expo-web-browser';
+import { Platform } from 'react-native';
 
 const SUPABASE_URL = supabaseUrl;
 const SUPABASE_ANON_KEY = supabaseAnonKey;
@@ -96,19 +97,28 @@ export async function connectXero(): Promise<{ success: boolean; error?: string 
     console.log('Opening Xero auth URL:', url);
 
     // Open the OAuth URL in a browser
-    const result = await WebBrowser.openAuthSessionAsync(
-      url,
-      `${SUPABASE_URL}/functions/v1/xero-callback`
-    );
-
-    console.log('WebBrowser result:', result.type);
-
-    if (result.type === 'success') {
-      return { success: true };
-    } else if (result.type === 'cancel') {
-      return { success: false, error: 'Connection cancelled' };
+    if (Platform.OS === 'web') {
+      // For web, redirect directly
+      // After auth, Xero redirects to the callback which then redirects back to the app
+      console.log('connectXero: Redirecting to', url);
+      window.location.href = url;
+      return { success: true }; // Will redirect, so this doesn't matter
     } else {
-      return { success: false, error: 'Connection failed' };
+      // For native, use WebBrowser
+      const result = await WebBrowser.openAuthSessionAsync(
+        url,
+        `${SUPABASE_URL}/functions/v1/xero-callback`
+      );
+
+      console.log('WebBrowser result:', result.type);
+
+      if (result.type === 'success') {
+        return { success: true };
+      } else if (result.type === 'cancel') {
+        return { success: false, error: 'Connection cancelled' };
+      } else {
+        return { success: false, error: 'Connection failed' };
+      }
     }
   } catch (error) {
     console.error('Xero connection error:', error);
