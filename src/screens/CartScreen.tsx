@@ -5,6 +5,7 @@ import {
   StyleSheet,
   SectionList,
   TouchableOpacity,
+  Pressable,
   Image,
   TextInput,
   Modal,
@@ -422,16 +423,19 @@ export default function CartScreen() {
             </View>
           </View>
 
-          <TouchableOpacity
+          <Pressable
             style={styles.datePickerButton}
-            onPress={() => setDatePickerSection(sectionKey)}
+            onPress={() => {
+              console.log('Date picker button pressed, sectionKey:', sectionKey);
+              setDatePickerSection(sectionKey);
+            }}
           >
             <Ionicons name="calendar-outline" size={18} color={theme.colors.accent} />
             <Text style={styles.datePickerText}>
               {selectedDate ? formatDate(selectedDate) : 'Select delivery date'}
             </Text>
             <Ionicons name="chevron-down" size={16} color={theme.colors.textSecondary} />
-          </TouchableOpacity>
+          </Pressable>
         </View>
       );
     },
