@@ -121,15 +121,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = async (email: string) => {
     try {
-      // Get the current origin for redirect, fallback to Vercel URL
-      const redirectUrl = typeof window !== 'undefined' && window.location?.origin
-        ? window.location.origin
-        : 'https://easy-ordering.vercel.app';
+      const redirectTo = 'https://easy-ordering.vercel.app';
 
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: redirectUrl,
-      });
-      return { error };
+      // Use direct fetch to avoid Supabase client issues on web
+      const response = await fetch(
+        `https://cijgmmckafmfmmlpvgyi.supabase.co/auth/v1/recover`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpamdtbWNrYWZtZm1tbHB2Z3lpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMjQzNTgsImV4cCI6MjA4NTYwMDM1OH0.nwe0aDmwCKGbdFHwiWhEv6aeonwwOO1mmLQTQw2wuFU',
+          },
+          body: JSON.stringify({
+            email,
+            redirect_to: redirectTo,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+        return { error: new Error(data.message || 'Failed to send reset email') };
+      }
+
+      return { error: null };
     } catch (error) {
       console.error('Reset password error:', error);
       return { error: error as Error };
