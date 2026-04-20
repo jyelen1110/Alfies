@@ -121,7 +121,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = async (email: string) => {
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email);
+      // Get the current origin for redirect, fallback to Vercel URL
+      const redirectUrl = typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin
+        : 'https://easy-ordering.vercel.app';
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: redirectUrl,
+      });
       return { error };
     } catch (error) {
       console.error('Reset password error:', error);
