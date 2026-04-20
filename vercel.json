@@ -4,6 +4,9 @@
   "framework": null,
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/home", "destination": "/api/home" },
+    { "source": "/privacy-policy", "destination": "/api/privacy-policy" },
+    { "source": "/terms-of-service", "destination": "/api/terms-of-service" },
     { "source": "/(.*)", "destination": "/" }
   ]
 }
