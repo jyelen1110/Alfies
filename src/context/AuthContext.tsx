@@ -33,18 +33,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   useEffect(() => {
-    // Check URL hash for recovery token on web and let Supabase process it
+    // Check URL hash for recovery token on web and process it
     const checkForRecoveryToken = async () => {
       if (typeof window !== 'undefined' && window.location.hash) {
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        if (hashParams.get('type') === 'recovery') {
-          // Let Supabase exchange the token for a session first
-          const { data, error } = await supabase.auth.getSession();
-          if (data.session) {
-            setSession(data.session);
-            setIsPasswordRecovery(true);
-            setIsLoading(false);
-            return true;
+        const type = hashParams.get('type');
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+
+        if (type === 'recovery' && accessToken) {
+          try {
+            // Manually set the session from URL tokens
+            const { data, error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken || '',
+            });
+
+            if (data.session) {
+              setSession(data.session);
+              setIsPasswordRecovery(true);
+              setIsLoading(false);
+              // Clear the hash from URL
+              window.history.replaceState(null, '', window.location.pathname);
+              return true;
+            }
+          } catch (e) {
+            console.error('Error setting session from recovery token:', e);
           }
         }
       }
