@@ -16,7 +16,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 export default function ResetPasswordScreen({ navigation }: { navigation: any }) {
-  const { clearPasswordRecovery } = useAuth();
+  const { clearPasswordRecovery, session } = useAuth();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -43,6 +43,15 @@ export default function ResetPasswordScreen({ navigation }: { navigation: any })
     setIsLoading(true);
 
     try {
+      // Check if we have a session
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+
+      if (!currentSession) {
+        setError('Session expired. Please request a new password reset link.');
+        setIsLoading(false);
+        return;
+      }
+
       const { error: updateError } = await supabase.auth.updateUser({
         password: password,
       });
@@ -51,6 +60,8 @@ export default function ResetPasswordScreen({ navigation }: { navigation: any })
         setError(updateError.message || 'Failed to reset password.');
       } else {
         setSuccess(true);
+        // Sign out after password reset so user can login with new password
+        await supabase.auth.signOut();
       }
     } catch {
       setError('An unexpected error occurred. Please try again.');
