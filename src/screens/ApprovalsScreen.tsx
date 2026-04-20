@@ -84,6 +84,13 @@ export default function ApprovalsScreen() {
   const [isCheckingEmail, setIsCheckingEmail] = useState(false);
   const [showMatchingModal, setShowMatchingModal] = useState(false);
 
+  // In-app confirm/alert modal (replaces window.confirm/alert on web, which
+  // Chrome sometimes suppresses silently). Reused on native for consistency.
+  const [confirmState, setConfirmState] = useState<
+    | { title: string; message: string; onConfirm: (() => void) | null; confirmLabel?: string }
+    | null
+  >(null);
+
   const pendingOrders = useMemo(
     () => state.orders.filter((o) => o.status === 'pending_approval'),
     [state.orders]
@@ -245,33 +252,25 @@ export default function ApprovalsScreen() {
     }
   }, [selectedOrder, editingItems, editingNotes, updateOrderItems, updateOrder, calculateEditTotal, closeEditModal, loadAllData]);
 
-  // Cross-platform alert helpers (must be defined before handleReject)
+  // Cross-platform alert helpers (must be defined before handleReject).
+  // Use an in-app Modal everywhere instead of window.alert/confirm so Chrome
+  // cannot silently suppress the dialog.
   const showMessage = useCallback((title: string, message: string) => {
-    if (Platform.OS === 'web') {
-      window.alert(`${title}\n\n${message}`);
-    } else {
-      Alert.alert(title, message);
-    }
+    setConfirmState({ title, message, onConfirm: null });
   }, []);
 
-  const showConfirm = useCallback((title: string, message: string, onConfirm: () => void) => {
-    if (Platform.OS === 'web') {
-      if (window.confirm(`${title}\n\n${message}`)) {
-        onConfirm();
-      }
-    } else {
-      Alert.alert(title, message, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Confirm', style: 'destructive', onPress: onConfirm },
-      ]);
-    }
-  }, []);
+  const showConfirm = useCallback(
+    (title: string, message: string, onConfirm: () => void, confirmLabel?: string) => {
+      setConfirmState({ title, message, onConfirm, confirmLabel });
+    },
+    []
+  );
 
   const handleApprove = useCallback(
     (order: Order) => {
       showConfirm(
         'Approve Order',
-        `Approve order ${order.order_number || order.id.substring(0, 8)}? This will generate an invoice.`,
+        `Approve order ${order.order_number || order.id.substring(0, 8)}? This will generate an invoice and export it to Xero.`,
         async () => {
           setIsProcessing(true);
           try {
@@ -1865,6 +1864,45 @@ export default function ApprovalsScreen() {
           }}
         />
       )}
+
+      {/* In-app confirm/alert modal — replaces window.confirm/alert which
+          Chrome can suppress. Handles both confirm (with onConfirm) and alert
+          (onConfirm === null) variants. */}
+      <Modal
+        visible={confirmState !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmState(null)}
+      >
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmCard}>
+            <Text style={styles.confirmTitle}>{confirmState?.title}</Text>
+            <Text style={styles.confirmMessage}>{confirmState?.message}</Text>
+            <View style={styles.confirmActions}>
+              {confirmState?.onConfirm && (
+                <TouchableOpacity
+                  style={[styles.confirmButton, styles.confirmButtonCancel]}
+                  onPress={() => setConfirmState(null)}
+                >
+                  <Text style={styles.confirmButtonCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.confirmButtonPrimary]}
+                onPress={() => {
+                  const cb = confirmState?.onConfirm;
+                  setConfirmState(null);
+                  if (cb) cb();
+                }}
+              >
+                <Text style={styles.confirmButtonPrimaryText}>
+                  {confirmState?.onConfirm ? confirmState.confirmLabel || 'Confirm' : 'OK'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -3042,6 +3080,69 @@ const styles = StyleSheet.create({
   },
   browseItemsButtonText: {
     fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.white,
+  },
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: theme.spacing.lg,
+    ...(Platform.OS === 'web' ? { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 } : {}),
+  },
+  confirmCard: {
+    backgroundColor: theme.colors.white,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
+    width: '100%',
+    maxWidth: 420,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  confirmTitle: {
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.sm,
+  },
+  confirmMessage: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textSecondary,
+    lineHeight: 22,
+    marginBottom: theme.spacing.lg,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: theme.spacing.sm,
+  },
+  confirmButton: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
+    borderRadius: theme.borderRadius.md,
+    minWidth: 96,
+    alignItems: 'center',
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : {}),
+  },
+  confirmButtonCancel: {
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  confirmButtonCancelText: {
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+  },
+  confirmButtonPrimary: {
+    backgroundColor: theme.colors.accent,
+  },
+  confirmButtonPrimaryText: {
+    fontSize: theme.fontSize.md,
     fontWeight: theme.fontWeight.semibold,
     color: theme.colors.white,
   },
