@@ -33,35 +33,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   useEffect(() => {
-    // Check URL hash for recovery token on web and process it
+    // Check URL for recovery token on web and process it
     const checkForRecoveryToken = async () => {
-      if (typeof window !== 'undefined' && window.location.hash) {
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const type = hashParams.get('type');
-        const accessToken = hashParams.get('access_token');
-        const refreshToken = hashParams.get('refresh_token');
+      if (typeof window === 'undefined') return false;
 
-        if (type === 'recovery' && accessToken) {
-          try {
-            // Manually set the session from URL tokens
-            const { data, error } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken || '',
-            });
+      // Check both hash and query params (Supabase uses different formats)
+      const hash = window.location.hash.substring(1);
+      const query = window.location.search.substring(1);
 
-            if (data.session) {
-              setSession(data.session);
-              setIsPasswordRecovery(true);
-              setIsLoading(false);
-              // Clear the hash from URL
-              window.history.replaceState(null, '', window.location.pathname);
-              return true;
-            }
-          } catch (e) {
-            console.error('Error setting session from recovery token:', e);
+      // Try hash first, then query params
+      let params = new URLSearchParams(hash);
+      if (!params.get('type') && !params.get('access_token')) {
+        params = new URLSearchParams(query);
+      }
+
+      const type = params.get('type');
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      const tokenHash = params.get('token_hash');
+
+      console.log('Recovery check:', { type, hasAccessToken: !!accessToken, hasTokenHash: !!tokenHash });
+
+      // Handle PKCE flow (token_hash)
+      if (type === 'recovery' && tokenHash) {
+        try {
+          const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: 'recovery',
+          });
+          console.log('verifyOtp result:', { data, error });
+
+          if (data.session) {
+            setSession(data.session);
+            setIsPasswordRecovery(true);
+            setIsLoading(false);
+            window.history.replaceState(null, '', window.location.pathname);
+            return true;
           }
+        } catch (e) {
+          console.error('Error verifying recovery token:', e);
         }
       }
+
+      // Handle implicit flow (access_token)
+      if (type === 'recovery' && accessToken) {
+        try {
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || '',
+          });
+          console.log('setSession result:', { data, error });
+
+          if (data.session) {
+            setSession(data.session);
+            setIsPasswordRecovery(true);
+            setIsLoading(false);
+            window.history.replaceState(null, '', window.location.pathname);
+            return true;
+          }
+        } catch (e) {
+          console.error('Error setting session from recovery token:', e);
+        }
+      }
+
+      // Just type=recovery without tokens (show screen anyway)
+      if (type === 'recovery') {
+        setIsPasswordRecovery(true);
+        setIsLoading(false);
+        return true;
+      }
+
       return false;
     };
 
