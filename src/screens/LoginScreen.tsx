@@ -66,12 +66,12 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
     try {
       const { error: resetError } = await resetPassword(email.trim());
       if (resetError) {
-        setError(resetError.message || 'Failed to send reset email.');
+        setError(String(resetError.message || resetError));
       } else {
         setSuccessMessage('Password reset email sent. Check your inbox.');
       }
-    } catch {
-      setError('An unexpected error occurred. Please try again.');
+    } catch (e) {
+      setError(String(e));
     } finally {
       setIsLoading(false);
     }
