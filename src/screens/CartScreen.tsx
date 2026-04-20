@@ -805,6 +805,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
     borderRadius: theme.borderRadius.md,
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' as const, zIndex: 10 } : {}),
   },
   datePickerText: {
     flex: 1,

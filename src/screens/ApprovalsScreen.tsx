@@ -5,6 +5,7 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  Pressable,
   Modal,
   Alert,
   ActivityIndicator,
@@ -1225,15 +1226,47 @@ export default function ApprovalsScreen() {
             {/* Delivery Date (Required) */}
             <View style={styles.deliveryDateSection}>
               <Text style={styles.deliveryDateLabel}>Delivery Date <Text style={styles.requiredAsterisk}>*</Text></Text>
-              <TouchableOpacity
-                style={styles.deliveryDateButton}
-                onPress={() => setShowDatePicker(true)}
-              >
-                <Ionicons name="calendar-outline" size={18} color={theme.colors.accent} />
-                <Text style={styles.deliveryDateButtonText}>
-                  {deliveryDate ? deliveryDate.toLocaleDateString() : 'Select date'}
-                </Text>
-              </TouchableOpacity>
+              {Platform.OS === 'web' ? (
+                <View style={styles.deliveryDateButton}>
+                  <Ionicons name="calendar-outline" size={18} color={theme.colors.accent} />
+                  {React.createElement('input', {
+                    type: 'date',
+                    value: deliveryDate
+                      ? `${deliveryDate.getFullYear()}-${String(deliveryDate.getMonth() + 1).padStart(2, '0')}-${String(deliveryDate.getDate()).padStart(2, '0')}`
+                      : '',
+                    min: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(),
+                    onChange: (e: { target: { value: string } }) => {
+                      const v = e.target.value;
+                      if (!v) { setDeliveryDate(null); return; }
+                      const [y, m, d] = v.split('-').map(Number);
+                      setDeliveryDate(new Date(y, m - 1, d));
+                    },
+                    style: {
+                      flex: 1,
+                      border: 'none',
+                      outline: 'none',
+                      background: 'transparent',
+                      fontSize: 16,
+                      color: theme.colors.text,
+                      fontFamily: 'inherit',
+                      cursor: 'pointer',
+                    },
+                  })}
+                </View>
+              ) : (
+                <Pressable
+                  style={styles.deliveryDateButton}
+                  onPress={() => {
+                    console.log('Delivery date button pressed');
+                    setShowDatePicker(true);
+                  }}
+                >
+                  <Ionicons name="calendar-outline" size={18} color={theme.colors.accent} />
+                  <Text style={styles.deliveryDateButtonText}>
+                    {deliveryDate ? deliveryDate.toLocaleDateString() : 'Select date'}
+                  </Text>
+                </Pressable>
+              )}
               {deliveryDate && (
                 <TouchableOpacity onPress={() => setDeliveryDate(null)}>
                   <Ionicons name="close-circle" size={20} color={theme.colors.textMuted} />
@@ -2871,6 +2904,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.sm,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' as const, zIndex: 10 } : {}),
   },
   deliveryDateButtonText: {
     fontSize: theme.fontSize.md,
@@ -2880,6 +2914,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
+    ...(Platform.OS === 'web' ? { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 } : {}),
   },
   datePickerModalContent: {
     backgroundColor: '#FFFFFF',
