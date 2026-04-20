@@ -228,11 +228,29 @@ export default function SettingsScreen() {
 
       if (response.ok && result.success) {
         setLastSyncTime(new Date().toISOString());
-        const msg = result.message || `Synced ${result.stats?.updated || 0} items from Xero`;
+        const s = result.stats || {};
+        const samples = result.samples || {};
+        const section = (label: string, names: string[] | undefined) => {
+          if (!names || names.length === 0) return '';
+          const preview = names.slice(0, 10).join(', ');
+          const more = names.length > 10 ? ` (+${names.length - 10} more)` : '';
+          return `\n\n${label}:\n${preview}${more}`;
+        };
+        const summary =
+          `Created: ${s.created ?? 0}\n` +
+          `Linked (matched by name): ${s.linked ?? 0}\n` +
+          `Updated: ${s.updated ?? 0}\n` +
+          `Unchanged: ${s.unchanged ?? 0}\n` +
+          `Deactivated: ${s.deactivated ?? 0}\n` +
+          `Errors: ${s.errors ?? 0}` +
+          section('Created', samples.created) +
+          section('Linked', samples.linked) +
+          section('Updated', samples.updated) +
+          section('Deactivated', samples.deactivated);
         if (Platform.OS === 'web') {
-          window.alert('Success: ' + msg);
+          window.alert('Xero sync complete\n\n' + summary);
         } else {
-          Alert.alert('Success', msg);
+          Alert.alert('Xero sync complete', summary);
         }
       } else {
         const errorMsg = result.error || 'Failed to sync items';

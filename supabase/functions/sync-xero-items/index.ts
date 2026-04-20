@@ -139,81 +139,181 @@ serve(async (req) => {
     const xeroItems = xeroData.Items || [];
     console.log(`Fetched ${xeroItems.length} items from Xero`);
 
-    // Get existing items from database
+    // Existing DB items for this tenant (used to match by code OR name)
     const { data: dbItems } = await supabaseAdmin
       .from('items')
-      .select('id, name, xero_item_code, wholesale_price, xero_account_code, tax_rate, status')
+      .select('id, name, sku, xero_item_code, wholesale_price, xero_account_code, tax_rate, status, supplier_id')
       .eq('tenant_id', tenantId);
 
-    const itemsToUpdate = [];
+    // Pick a default supplier for newly-created items. Prefer one whose name
+    // matches the tenant (e.g. "Alfie's Food Co."); otherwise just the first
+    // supplier for the tenant.
+    const { data: tenantRow } = await supabaseAdmin
+      .from('tenants')
+      .select('name')
+      .eq('id', tenantId)
+      .single();
+    const { data: suppliers } = await supabaseAdmin
+      .from('suppliers')
+      .select('id, name')
+      .eq('tenant_id', tenantId);
+    const defaultSupplier =
+      suppliers?.find(
+        (s) => tenantRow?.name && s.name.toLowerCase() === tenantRow.name.toLowerCase()
+      ) || suppliers?.[0];
+
+    if (!defaultSupplier) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'No supplier exists for this tenant. Create at least one supplier before syncing items from Xero.',
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const stats = {
-      total: xeroItems.length,
+      total_from_xero: xeroItems.length,
+      created: 0,
       updated: 0,
-      skipped: 0,
+      linked: 0,
+      unchanged: 0,
+      deactivated: 0,
       errors: 0,
     };
+    const createdNames: string[] = [];
+    const updatedNames: string[] = [];
+    const linkedNames: string[] = [];
+    const deactivatedNames: string[] = [];
 
-    // Match and update items
+    const normaliseName = (n: string | undefined) => (n || '').trim().toLowerCase();
+    const touchedDbIds = new Set<string>();
+
     for (const xeroItem of xeroItems) {
-      const itemCode = xeroItem.Code;
+      const itemCode: string | undefined = xeroItem.Code;
       if (!itemCode) continue;
 
-      // Find matching item in database by xero_item_code
-      const dbItem = dbItems?.find(item => item.xero_item_code === itemCode);
+      // Skip items that Xero has marked inactive for sales.
+      if (xeroItem.IsSold === false) continue;
 
+      // Match by code first, then fall back to case-insensitive name match.
+      let dbItem = dbItems?.find((i) => i.xero_item_code === itemCode);
+      let matchedByName = false;
       if (!dbItem) {
-        stats.skipped++;
-        continue;
+        const target = normaliseName(xeroItem.Name);
+        dbItem = dbItems?.find((i) => normaliseName(i.name) === target);
+        if (dbItem) matchedByName = true;
       }
 
-      // Map Xero tax type to tax rate
-      let taxRate = 10; // Default GST 10%
-      if (xeroItem.SalesDetails?.TaxType === 'BASEXCLUDED' ||
-          xeroItem.SalesDetails?.TaxType === 'EXEMPTINCOME' ||
-          xeroItem.SalesDetails?.TaxType === 'GSTONIMPORTS') {
+      // Map Xero tax type to tax rate.
+      let taxRate = 10;
+      if (
+        xeroItem.SalesDetails?.TaxType === 'BASEXCLUDED' ||
+        xeroItem.SalesDetails?.TaxType === 'EXEMPTINCOME' ||
+        xeroItem.SalesDetails?.TaxType === 'GSTONIMPORTS'
+      ) {
         taxRate = 0;
       }
 
-      // Map Xero status to our status
-      let status = 'active';
+      // Map Xero status to our status.
+      let status: 'active' | 'inactive' | 'sold_out' = 'active';
       if (xeroItem.IsTrackedAsInventory && xeroItem.QuantityOnHand === 0) {
         status = 'sold_out';
-      } else if (xeroItem.IsSold === false) {
-        status = 'inactive';
       }
 
-      // Prepare update
-      const updates: any = {
+      const salesPrice =
+        typeof xeroItem.SalesDetails?.UnitPrice === 'number'
+          ? xeroItem.SalesDetails.UnitPrice
+          : null;
+      const accountCode = xeroItem.SalesDetails?.AccountCode ?? null;
+
+      if (!dbItem) {
+        // Create a new item in our catalog.
+        const { error: insertError } = await supabaseAdmin.from('items').insert({
+          tenant_id: tenantId,
+          supplier_id: defaultSupplier.id,
+          name: xeroItem.Name || itemCode,
+          sku: itemCode,
+          xero_item_code: itemCode,
+          xero_account_code: accountCode,
+          tax_rate: taxRate,
+          wholesale_price: salesPrice ?? 0,
+          status,
+        });
+        if (insertError) {
+          console.error('Insert failed for Xero item', itemCode, insertError);
+          stats.errors++;
+        } else {
+          stats.created++;
+          if (createdNames.length < 100) createdNames.push(xeroItem.Name || itemCode);
+        }
+        continue;
+      }
+
+      touchedDbIds.add(dbItem.id);
+
+      const updates: Record<string, unknown> = {
         name: xeroItem.Name || dbItem.name,
-        wholesale_price: xeroItem.SalesDetails?.UnitPrice || dbItem.wholesale_price,
-        xero_account_code: xeroItem.SalesDetails?.AccountCode || dbItem.xero_account_code,
+        wholesale_price: salesPrice ?? dbItem.wholesale_price,
+        xero_account_code: accountCode ?? dbItem.xero_account_code,
         tax_rate: taxRate,
+        xero_item_code: itemCode,
         status,
         updated_at: new Date().toISOString(),
       };
 
-      // Check if anything changed
+      const priceChanged =
+        Math.abs((updates.wholesale_price as number) - (dbItem.wholesale_price ?? 0)) > 0.01;
       const changed =
         updates.name !== dbItem.name ||
-        Math.abs(updates.wholesale_price - dbItem.wholesale_price) > 0.01 ||
+        priceChanged ||
         updates.xero_account_code !== dbItem.xero_account_code ||
         updates.tax_rate !== dbItem.tax_rate ||
-        updates.status !== dbItem.status;
+        updates.status !== dbItem.status ||
+        updates.xero_item_code !== dbItem.xero_item_code;
 
-      if (changed) {
-        const { error } = await supabaseAdmin
-          .from('items')
-          .update(updates)
-          .eq('id', dbItem.id);
+      if (!changed) {
+        stats.unchanged++;
+        continue;
+      }
 
-        if (error) {
-          console.error(`Error updating item ${itemCode}:`, error);
-          stats.errors++;
-        } else {
-          stats.updated++;
-        }
+      const { error: updateError } = await supabaseAdmin
+        .from('items')
+        .update(updates)
+        .eq('id', dbItem.id);
+      if (updateError) {
+        console.error('Update failed for Xero item', itemCode, updateError);
+        stats.errors++;
+      } else if (matchedByName && dbItem.xero_item_code !== itemCode) {
+        stats.linked++;
+        if (linkedNames.length < 100) linkedNames.push(dbItem.name);
       } else {
-        stats.skipped++;
+        stats.updated++;
+        if (updatedNames.length < 100) updatedNames.push(dbItem.name);
+      }
+    }
+
+    // Deactivate DB items that were previously linked to Xero but are no
+    // longer in the active Xero set. Items without xero_item_code (manual
+    // entries) are deliberately left untouched.
+    const candidates =
+      dbItems?.filter(
+        (i) =>
+          i.xero_item_code &&
+          !touchedDbIds.has(i.id) &&
+          i.status !== 'inactive'
+      ) ?? [];
+    for (const stale of candidates) {
+      const { error: deactivateError } = await supabaseAdmin
+        .from('items')
+        .update({ status: 'inactive', updated_at: new Date().toISOString() })
+        .eq('id', stale.id);
+      if (deactivateError) {
+        console.error('Deactivate failed for item', stale.id, deactivateError);
+        stats.errors++;
+      } else {
+        stats.deactivated++;
+        if (deactivatedNames.length < 100) deactivatedNames.push(stale.name);
       }
     }
 
@@ -223,7 +323,16 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         stats,
-        message: `Synced ${stats.updated} items from Xero`,
+        samples: {
+          created: createdNames,
+          linked: linkedNames,
+          updated: updatedNames,
+          deactivated: deactivatedNames,
+        },
+        message:
+          `Xero sync complete — ` +
+          `created ${stats.created}, linked ${stats.linked}, updated ${stats.updated}, ` +
+          `unchanged ${stats.unchanged}, deactivated ${stats.deactivated}, errors ${stats.errors}`,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
