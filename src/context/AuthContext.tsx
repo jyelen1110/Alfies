@@ -75,8 +75,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Handle implicit flow (access_token)
-      if (type === 'recovery' && accessToken) {
+      // Handle implicit flow (access_token) - check for recovery type OR just access_token from email link
+      if (accessToken && (type === 'recovery' || !type)) {
         try {
           const { data, error } = await supabase.auth.setSession({
             access_token: accessToken,
@@ -86,10 +86,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           if (data.session) {
             setSession(data.session);
-            setIsPasswordRecovery(true);
+            // If type is recovery OR we came from a recovery link, show reset screen
+            if (type === 'recovery') {
+              setIsPasswordRecovery(true);
+            }
             setIsLoading(false);
             window.history.replaceState(null, '', window.location.pathname);
-            return true;
+            return type === 'recovery';
           }
         } catch (e) {
           console.error('Error setting session from recovery token:', e);
