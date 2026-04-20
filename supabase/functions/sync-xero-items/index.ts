@@ -23,48 +23,93 @@ serve(async (req) => {
       });
     }
 
-    // Use JWT_ANON_KEY for token verification
-    const jwtKey = Deno.env.get('JWT_ANON_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      jwtKey,
-      { global: { headers: { Authorization: authHeader } } }
-    );
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const isServiceRole =
+      !!serviceRoleKey && authHeader === `Bearer ${serviceRoleKey}`;
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Get user's tenant
-    const { data: userData } = await supabase
-      .from('users')
-      .select('tenant_id, role')
-      .eq('id', user.id)
-      .single();
-
-    if (!userData || userData.role !== 'owner') {
-      return new Response(JSON.stringify({ error: 'Only owners can sync items' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const tenantId = userData.tenant_id;
-
-    // Get Xero tokens for this user
+    // Supabase admin client (service role) — used for everything after auth.
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      serviceRoleKey
     );
 
+    let targetUserId: string;
+    let tenantId: string;
+
+    if (isServiceRole) {
+      // Called by cron: caller provides which owner to sync in the body.
+      const body = (await req.json().catch(() => ({}))) as {
+        user_id?: string;
+        tenant_id?: string;
+      };
+      if (!body.user_id) {
+        return new Response(
+          JSON.stringify({
+            error: 'Service-role call requires user_id in body',
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      targetUserId = body.user_id;
+
+      const { data: userData } = await supabaseAdmin
+        .from('users')
+        .select('tenant_id, role')
+        .eq('id', targetUserId)
+        .single();
+      if (!userData) {
+        return new Response(JSON.stringify({ error: 'User not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      tenantId = userData.tenant_id;
+    } else {
+      // Called by the web/mobile client with a user JWT.
+      const jwtKey =
+        Deno.env.get('JWT_ANON_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        jwtKey,
+        { global: { headers: { Authorization: authHeader } } }
+      );
+
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('tenant_id, role')
+        .eq('id', user.id)
+        .single();
+
+      if (!userData || userData.role !== 'owner') {
+        return new Response(
+          JSON.stringify({ error: 'Only owners can sync items' }),
+          {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      targetUserId = user.id;
+      tenantId = userData.tenant_id;
+    }
+
+    // Get Xero tokens for this user
     const { data: tokenData, error: tokenError } = await supabaseAdmin
       .from('integration_tokens')
       .select('access_token, refresh_token, xero_tenant_id, token_expires_at')
-      .eq('user_id', user.id)
+      .eq('user_id', targetUserId)
       .eq('provider', 'xero')
       .single();
 
@@ -112,7 +157,7 @@ serve(async (req) => {
           refresh_token: newTokens.refresh_token,
           token_expires_at: new Date(Date.now() + newTokens.expires_in * 1000).toISOString(),
         })
-        .eq('user_id', user.id)
+        .eq('user_id', targetUserId)
         .eq('provider', 'xero');
     }
 

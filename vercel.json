@@ -8,5 +8,8 @@
     { "source": "/privacy-policy", "destination": "/api/privacy-policy" },
     { "source": "/terms-of-service", "destination": "/api/terms-of-service" },
     { "source": "/(.*)", "destination": "/" }
+  ],
+  "crons": [
+    { "path": "/api/cron/sync-xero-items", "schedule": "0 16 * * *" }
   ]
 }
