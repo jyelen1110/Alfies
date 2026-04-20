@@ -9,6 +9,7 @@ import { useOrders } from '../context/OrderContext';
 
 import LoginScreen from '../screens/LoginScreen';
 import CustomerRegistrationScreen from '../screens/CustomerRegistrationScreen';
+import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import ShopScreen from '../screens/ShopScreen';
 import CartScreen from '../screens/CartScreen';
 import OrdersScreen from '../screens/OrdersScreen';
@@ -252,7 +253,7 @@ function MainTabs() {
 }
 
 export default function Navigation() {
-  const { session, isLoading } = useAuth();
+  const { session, isLoading, isPasswordRecovery } = useAuth();
 
   if (isLoading) {
     return (
@@ -260,6 +261,17 @@ export default function Navigation() {
         <Ionicons name="cart" size={64} color={theme.colors.white} />
         <Text style={styles.loadingText}>Alfies</Text>
       </View>
+    );
+  }
+
+  // Show reset password screen if user clicked a password recovery link
+  if (isPasswordRecovery) {
+    return (
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
     );
   }
 
@@ -275,6 +287,7 @@ function LoginStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="CustomerRegistration" component={CustomerRegistrationScreen} />
+      <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
     </Stack.Navigator>
   );
 }

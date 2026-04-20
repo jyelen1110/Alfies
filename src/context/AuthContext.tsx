@@ -9,6 +9,8 @@ interface AuthContextType {
   user: User | null;
   tenant: Tenant | null;
   isLoading: boolean;
+  isPasswordRecovery: boolean;
+  clearPasswordRecovery: () => void;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
@@ -28,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [allTenants, setAllTenants] = useState<Tenant[]>([]);
   const [activeTenantId, setActiveTenantId] = useState<string | null>(null);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -39,8 +42,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true);
+      }
       if (session?.user) {
         fetchUserProfile(session.user.id);
       } else {
@@ -137,6 +143,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user?.is_master === true;
   };
 
+  const clearPasswordRecovery = () => {
+    setIsPasswordRecovery(false);
+  };
+
   const switchTenant = async (tenantId: string) => {
     if (!user?.is_master) return;
 
@@ -162,6 +172,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         tenant,
         isLoading,
+        isPasswordRecovery,
+        clearPasswordRecovery,
         signIn,
         signOut,
         resetPassword,
