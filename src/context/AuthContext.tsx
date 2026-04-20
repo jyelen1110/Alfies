@@ -33,20 +33,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   useEffect(() => {
-    // Check URL hash for recovery token on web
-    if (typeof window !== 'undefined' && window.location.hash) {
-      const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      if (hashParams.get('type') === 'recovery') {
-        setIsPasswordRecovery(true);
+    // Check URL hash for recovery token on web and let Supabase process it
+    const checkForRecoveryToken = async () => {
+      if (typeof window !== 'undefined' && window.location.hash) {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        if (hashParams.get('type') === 'recovery') {
+          // Let Supabase exchange the token for a session first
+          const { data, error } = await supabase.auth.getSession();
+          if (data.session) {
+            setSession(data.session);
+            setIsPasswordRecovery(true);
+            setIsLoading(false);
+            return true;
+          }
+        }
       }
-    }
+      return false;
+    };
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) {
-        fetchUserProfile(session.user.id);
-      } else {
-        setIsLoading(false);
+    checkForRecoveryToken().then((isRecovery) => {
+      if (!isRecovery) {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          setSession(session);
+          if (session?.user) {
+            fetchUserProfile(session.user.id);
+          } else {
+            setIsLoading(false);
+          }
+        });
       }
     });
 
@@ -55,9 +69,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (event === 'PASSWORD_RECOVERY') {
         setIsPasswordRecovery(true);
       }
-      if (session?.user) {
+      if (session?.user && !isPasswordRecovery) {
         fetchUserProfile(session.user.id);
-      } else {
+      } else if (!session) {
         setUser(null);
         setTenant(null);
         setIsLoading(false);
