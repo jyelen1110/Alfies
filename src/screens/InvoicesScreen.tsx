@@ -299,8 +299,8 @@ export default function InvoicesScreen() {
   );
 
   const getExportStatus = (invoice: Invoice): ExportStatus => {
-    if (invoice.xero_invoice_id) return 'exported';
     if (invoice.status === 'export_failed') return 'export_failed';
+    if (invoice.status === 'exported' && invoice.xero_invoice_id) return 'exported';
     if (invoice.status === 'pending') return 'pending';
     return 'not_exported';
   };

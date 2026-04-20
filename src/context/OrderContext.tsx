@@ -1015,18 +1015,22 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     if (!result.success) {
       const errorMessage = result.error || 'Failed to export to Xero';
       console.error('Failed to export to Xero:', errorMessage);
-      // Mark as export failed with error message
+      // Mark as export failed and clear any stale success fields from prior attempts
       dispatch({
         type: 'UPDATE_INVOICE',
         payload: {
           ...invoice,
           status: 'export_failed',
           export_error: errorMessage,
+          xero_invoice_id: undefined,
+          exported_at: undefined,
         },
       });
       await supabase.from('invoices').update({
         status: 'export_failed',
         export_error: errorMessage,
+        xero_invoice_id: null,
+        exported_at: null,
       }).eq('id', invoiceId);
       throw new Error(errorMessage);
     }
