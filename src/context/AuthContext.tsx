@@ -84,6 +84,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
           console.log('setSession result:', { data, error });
 
+          if (error) {
+            console.error('setSession error:', error.message);
+            // Still show recovery screen so user knows what happened
+            if (type === 'recovery') {
+              setIsPasswordRecovery(true);
+              setIsLoading(false);
+              return true;
+            }
+          }
+
           if (data.session) {
             setSession(data.session);
             // If type is recovery OR we came from a recovery link, show reset screen
@@ -96,6 +106,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } catch (e) {
           console.error('Error setting session from recovery token:', e);
+          // Still show recovery screen on error
+          if (type === 'recovery') {
+            setIsPasswordRecovery(true);
+            setIsLoading(false);
+            return true;
+          }
         }
       }
 

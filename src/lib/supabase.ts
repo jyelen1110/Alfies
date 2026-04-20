@@ -2,15 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const DEFAULT_SUPABASE_URL = 'https://cijgmmckafmfmmlpvgyi.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpamdtbWNrYWZtZm1tbHB2Z3lpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMjQzNTgsImV4cCI6MjA4NTYwMDM1OH0.nwe0aDmwCKGbdFHwiWhEv6aeonwwOO1mmLQTQw2wuFU';
-
-// Handle empty string case from env vars
-const envUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const envKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-
-export const supabaseUrl = envUrl && envUrl.trim() ? envUrl : DEFAULT_SUPABASE_URL;
-export const supabaseAnonKey = envKey && envKey.trim() ? envKey : DEFAULT_SUPABASE_ANON_KEY;
+// Hardcoded to avoid env var issues on Vercel web builds
+export const supabaseUrl = 'https://cijgmmckafmfmmlpvgyi.supabase.co';
+export const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpamdtbWNrYWZtZm1tbHB2Z3lpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMjQzNTgsImV4cCI6MjA4NTYwMDM1OH0.nwe0aDmwCKGbdFHwiWhEv6aeonwwOO1mmLQTQw2wuFU';
 
 const ExpoSecureStoreAdapter = {
   getItem: async (key: string) => {
@@ -41,10 +35,5 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: Platform.OS === 'web',
-  },
-  global: {
-    headers: {
-      'Accept': 'application/json',
-    },
   },
 });
