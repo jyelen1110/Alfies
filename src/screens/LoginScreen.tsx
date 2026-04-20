@@ -19,13 +19,14 @@ import { useAuth } from '../context/AuthContext';
 const PRIVACY_POLICY_URL = 'https://easy-ordering.vercel.app/api/privacy-policy';
 
 export default function LoginScreen({ navigation }: { navigation: any }) {
-  const { signIn } = useAuth();
+  const { signIn, resetPassword } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const handleSignIn = async () => {
     if (!email.trim()) {
@@ -44,6 +45,30 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       const { error: signInError } = await signIn(email.trim(), password);
       if (signInError) {
         setError(signInError.message || 'Invalid email or password.');
+      }
+    } catch {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      setError('Please enter your email address first.');
+      return;
+    }
+
+    setError(null);
+    setSuccessMessage(null);
+    setIsLoading(true);
+
+    try {
+      const { error: resetError } = await resetPassword(email.trim());
+      if (resetError) {
+        setError(resetError.message || 'Failed to send reset email.');
+      } else {
+        setSuccessMessage('Password reset email sent. Check your inbox.');
       }
     } catch {
       setError('An unexpected error occurred. Please try again.');
@@ -76,6 +101,17 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
                 color={theme.colors.danger}
               />
               <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+
+          {successMessage && (
+            <View style={styles.successContainer}>
+              <Ionicons
+                name="checkmark-circle"
+                size={18}
+                color={theme.colors.success}
+              />
+              <Text style={styles.successText}>{successMessage}</Text>
             </View>
           )}
 
@@ -132,6 +168,13 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
                 />
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              style={styles.forgotPasswordLink}
+              onPress={handleForgotPassword}
+              disabled={isLoading}
+            >
+              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity
@@ -222,6 +265,21 @@ const styles = StyleSheet.create({
     color: theme.colors.danger,
     fontWeight: theme.fontWeight.medium,
   },
+  successContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.sm + 4,
+    marginBottom: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  successText: {
+    flex: 1,
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.success,
+    fontWeight: theme.fontWeight.medium,
+  },
   inputGroup: {
     marginBottom: theme.spacing.md,
   },
@@ -252,6 +310,15 @@ const styles = StyleSheet.create({
   eyeButton: {
     paddingHorizontal: theme.spacing.sm + 4,
     paddingVertical: theme.spacing.sm,
+  },
+  forgotPasswordLink: {
+    alignSelf: 'flex-end',
+    marginTop: theme.spacing.xs,
+  },
+  forgotPasswordText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.primary,
+    fontWeight: theme.fontWeight.medium,
   },
   signInButton: {
     backgroundColor: theme.colors.white,
