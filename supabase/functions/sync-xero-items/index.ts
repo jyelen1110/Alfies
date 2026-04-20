@@ -121,8 +121,8 @@ serve(async (req) => {
     const itemsResponse = await fetch(`${XERO_API_BASE}/Items`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'xero-tenant-id': tokenData.xero_tenant_id,
-        'Content-Type': 'application/json',
+        'Xero-Tenant-Id': tokenData.xero_tenant_id,
+        Accept: 'application/json',
       },
     });
 
